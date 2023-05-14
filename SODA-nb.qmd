@@ -24,14 +24,31 @@ library(RColorBrewer)
 
 This report covers the analysis of occupational accidents, also known as work accidents, in Spain
 
-## Data Import
+## Data Exploration
+
+### Work Accident Data
+
+```{r}
+load("data/ATR/ATR-I.1.3.RData")
+atr |>
+  filter(sector == "total",
+         region == "ES") |>
+  ggplot(aes(date, accidents)) +
+  geom_line() +
+  geom_point()
+```
+
+### Active working population
 
 ```{r}
 epa_sector |>
-  filter(sector == "total",
+  filter(region == "ES",
+         periodo == "2020-09-30",
          edad == "total",
          sexo == "total")
 ```
+
+### Population
 
 ```{r}
 pob_prov_edad |>

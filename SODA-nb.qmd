@@ -1,0 +1,101 @@
+---
+title: "Spain Occupational Accident Analysis (SODA)"
+subtitle: "Business Analytics Project"
+author: "Luis Gentner"
+toc: true
+date: today
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+```{r}
+#| message: false
+library(tidyverse)
+library(ESdata)
+library(raster)
+library(sp)
+library(geodata)
+library(RColorBrewer)
+```
+
+## Introduction
+
+This report covers the analysis of occupational accidents, also known as work accidents, in Spain
+
+## Data Import
+
+```{r}
+epa_sector |>
+  filter(sector == "total",
+         edad == "total",
+         sexo == "total")
+```
+
+```{r}
+pob_prov_edad |>
+  filter(periodo == 2021,
+         edad == "total",
+         sexo == "total")
+```
+
+```{r}
+spain_lv1<- gadm(country = "Spain", level = 1,
+                  path = "data")
+n_provinces = length(spain_lv1$"NAME_1")
+reg_colors = colorRampPalette(brewer.pal(12, "Set3"))(n_provinces)
+spplot(spain_lv1, "NAME_1", 
+       col.regions = reg_colors, 
+       col = "white",
+       xlim = range(-9.6,3.6), ylim = range(35.7,44),
+       asp = 1.0
+       )
+```
+
+```{r}
+spain_lv2<- gadm(country = "Spain", level = 2,
+                  path = "data")
+n_regions = length(spain_lv2$"NAME_2")
+reg_colors = colorRampPalette(brewer.pal(12, "Set3"))(n_regions)
+spplot(spain_lv2, "NAME_2", 
+       col.regions = reg_colors, 
+       col = "white",
+       xlim = range(-9.6,3.6), ylim = range(35.7,44),
+       asp = 1.0,
+       colorkey = FALSE
+       )
+```
+
+```{r}
+# Add region names to population
+pop_2021 <- pob_prov_edad |>
+  filter(periodo == 2021,
+         edad == "total",
+         sexo == "total",
+         region != "ES") |>
+  left_join(provincias_iso,
+            by = join_by(region == iso)) |>
+  arrange(nombres)
+# Join population by region names
+spain_lv2$population <- spain_lv2 |>
+  as_tibble() |>
+  left_join(pop_2021,
+            by = join_by(NAME_2 == nombres)) |>
+  pull(valor)
+# Plot population
+spplot(spain_lv2, "population",
+       col = "white",
+       xlim = range(-9.6,3.6), ylim = range(35.7,44),
+       asp = 1.0
+       #scales=list(draw=TRUE)
+       )
+
+```
+
+```{r}
+epa_sector$sector |> unique()
+```
+
+```{r}
+```

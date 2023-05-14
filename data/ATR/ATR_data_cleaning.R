@@ -38,11 +38,20 @@ atr <- atr |>
   rename(region_name = region,
          region = iso,
          region_label = label) |>
+  # Long format like the other ESdata tables
+  pivot_longer(where(is.numeric),
+               names_to = "year",
+               values_to = "accidents") |>
+  # Format year as date
+  mutate(date = make_date(year, 12, 31)) |>
   # Change order
   relocate(sector,
            region,
-           where(is.numeric))
+           date,
+           accidents)
 
 # Save
 save(atr, file = "data/ATR/ATR-I.1.3.RData")
+
+atr
 

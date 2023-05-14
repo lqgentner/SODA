@@ -21,6 +21,10 @@ renamed_ccaa = c("España" = "total",
                  "Comunidad Foral de Navarra" = "Navarra (Comunidad Foral de)",
                  "La Rioja" = "Rioja (La)")
 
+# Name and ISO label of autonomous communities
+ccaa_iso <- ccaa_iso |>
+  mutate(across(everything(), as_factor))
+
 atr <- atr |>
   # Factorize
   mutate(across(c(sector, region), as_factor)) |>
@@ -29,7 +33,15 @@ atr <- atr |>
   # Rename regions according to ccaa_iso and join with ISO names
   mutate(region = fct_recode(region, !!!renamed_ccaa)) |>
   left_join(ccaa_iso,
-            by = join_by(region == nombres))
+            by = join_by(region == nombres)) |>
+  # Rename region columns
+  rename(region_name = region,
+         region = iso,
+         region_label = label) |>
+  # Change order
+  relocate(sector,
+           region,
+           where(is.numeric))
 
 # Save
 save(atr, file = "data/ATR/ATR-I.1.3.RData")

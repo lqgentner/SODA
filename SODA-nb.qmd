@@ -12,12 +12,14 @@ editor: visual
 
 ```{r}
 #| message: false
+library(conflicted)
 library(tidyverse)
 library(ESdata)
-library(raster)
-library(sp)
-library(geodata)
-library(RColorBrewer)
+
+conflicts_prefer(
+  dplyr::filter(),
+  dplyr::select(),
+)
 ```
 
 ## Introduction
@@ -32,10 +34,46 @@ This report covers the analysis of occupational accidents, also known as work ac
 load("data/ATR/ATR-I.1.3.RData")
 atr |>
   filter(sector == "total",
-         region == "ES") |>
+         ccaa == "ES") |>
   ggplot(aes(date, accidents)) +
   geom_line() +
   geom_point()
+```
+
+```{r}
+atr |>
+  filter(ccaa == "ES") |>
+  ggplot(aes(x = date, y = accidents, color = sector)) +
+  geom_line() +
+  geom_point(size=2) +
+    labs(x = "Year",
+         y = "Work accidents per 100k workers",
+         title = "Work accidents in Spain from 2009 to 2021")
+```
+
+```{r}
+library(gghighlight)
+atr |>
+  filter(ccaa == "ES") |>
+  ggplot(aes(x = date, y = accidents, color = sector)) +
+  geom_line() +
+  geom_point() +
+  gghighlight(sector != "total", label_key = sector, use_group_by = FALSE) +
+  facet_wrap(~sector)
+```
+
+Idea: Year over year change (per sector)
+
+```{r}
+atr |>
+  filter(ccaa != "ES",
+         sector == "total",
+         year == 2021) |>
+  ggplot(aes(x = accidents, y = fct_reorder(ccaa_name, accidents))) +
+  geom_col() +
+  labs(x = "Work accidents per 100k workers",
+       y = NULL,
+       title = "Work accidents in 2021 per autonomous community")
 ```
 
 ### Active working population
@@ -43,7 +81,7 @@ atr |>
 ```{r}
 epa_sector |>
   filter(region == "ES",
-         periodo == "2020-09-30",
+         # periodo == "2020-09-30",
          edad == "total",
          sexo == "total")
 ```
@@ -57,62 +95,46 @@ pob_prov_edad |>
          sexo == "total")
 ```
 
-```{r}
-spain_lv1<- gadm(country = "Spain", level = 1,
-                  path = "data")
-n_provinces = length(spain_lv1$"NAME_1")
-reg_colors = colorRampPalette(brewer.pal(12, "Set3"))(n_provinces)
-spplot(spain_lv1, "NAME_1", 
-       col.regions = reg_colors, 
-       col = "white",
-       xlim = range(-9.6,3.6), ylim = range(35.7,44),
-       asp = 1.0
-       )
-```
+\
 
 ```{r}
-spain_lv2<- gadm(country = "Spain", level = 2,
-                  path = "data")
-n_regions = length(spain_lv2$"NAME_2")
-reg_colors = colorRampPalette(brewer.pal(12, "Set3"))(n_regions)
-spplot(spain_lv2, "NAME_2", 
-       col.regions = reg_colors, 
-       col = "white",
-       xlim = range(-9.6,3.6), ylim = range(35.7,44),
-       asp = 1.0,
-       colorkey = FALSE
-       )
-```
+#| warning: false
 
-```{r}
-# Add region names to population
-pop_2021 <- pob_prov_edad |>
-  filter(periodo == 2021,
-         edad == "total",
-         sexo == "total",
-         region != "ES") |>
-  left_join(provincias_iso,
-            by = join_by(region == iso)) |>
-  arrange(nombres)
-# Join population by region names
-spain_lv2$population <- spain_lv2 |>
-  as_tibble() |>
-  left_join(pop_2021,
-            by = join_by(NAME_2 == nombres)) |>
-  pull(valor)
-# Plot population
-spplot(spain_lv2, "population",
-       col = "white",
-       xlim = range(-9.6,3.6), ylim = range(35.7,44),
-       asp = 1.0
-       #scales=list(draw=TRUE)
-       )
+library(mapSpain)
+library(ggrepel)
 
-```
+ccaa <- esp_get_ccaa()
+can_box <- esp_get_can_box()
 
-```{r}
-epa_sector$sector |> unique()
-```
+atr_2021 <- atr |>
+  filter(year == 2021,
+         ccaa != "ES",
+         sector == "total") |>
+  mutate(ccaa = as.character(ccaa))
 
-```{r}
+ccaa_atr <- ccaa |>
+  inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
+
+ggplot(ccaa_atr) +
+  geom_sf(aes(fill = accidents),
+          color = "grey70",
+          linewidth = .3) +
+  geom_sf(data = can_box, color = "grey70") +
+  geom_label_repel(
+    aes(label = round(accidents), geometry = geometry),
+    stat = "sf_coordinates",
+    fill = alpha(c("white"),0.5),
+    color = "black",
+    size = 3,
+    label.size = 0
+  ) +
+  scale_fill_gradientn(
+    colors = hcl.colors(10, "Blues", rev = TRUE),
+    n.breaks = 10,
+    guide = "legend",
+  ) +
+  theme_minimal() +
+  theme(legend.position = c(0.1, 0.6)) +
+  labs(x = NULL, y = NULL,
+       title = "Work accidents in 2021 per autonomous community")
 ```

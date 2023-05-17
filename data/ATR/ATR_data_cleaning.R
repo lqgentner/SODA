@@ -35,18 +35,19 @@ atr <- atr |>
   left_join(ccaa_iso,
             by = join_by(region == nombres)) |>
   # Rename region columns
-  rename(region_name = region,
-         region = iso,
-         region_label = label) |>
+  rename(ccaa = iso,
+         ccaa_name = region,
+         ccaa_label = label) |>
   # Long format like the other ESdata tables
   pivot_longer(where(is.numeric),
                names_to = "year",
                values_to = "accidents") |>
-  # Format year as date
-  mutate(date = make_date(year, 12, 31)) |>
+  # Format year as date, use middle of the year
+  mutate(year = as.numeric(year),
+         date = make_date(year, 6, 30)) |>
   # Change order
   relocate(sector,
-           region,
+           ccaa,
            date,
            accidents)
 

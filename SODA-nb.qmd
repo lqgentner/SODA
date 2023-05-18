@@ -14,11 +14,16 @@ editor: visual
 #| message: false
 library(conflicted)
 library(tidyverse)
+library(scales)
+library(ggrepel)
+library(gghighlight)
+library(mapSpain)
 library(ESdata)
 
 conflicts_prefer(
   dplyr::filter(),
   dplyr::select(),
+  dplyr::lag(),
 )
 ```
 
@@ -33,7 +38,7 @@ This report covers the analysis of occupational accidents, also known as work ac
 ```{r}
 load("data/ATR/ATR-I.1.3.RData")
 atr |>
-  filter(sector == "total",
+  filter(sector == "Total",
          ccaa == "ES") |>
   ggplot(aes(date, accidents)) +
   geom_line() +
@@ -51,8 +56,44 @@ atr |>
          title = "Work accidents in Spain from 2009 to 2021")
 ```
 
+### Add year over year change
+
 ```{r}
-library(gghighlight)
+atr <- atr |>
+  mutate(acc_yoy = (accidents - lag(accidents)) / lag(accidents),
+         .by = c(sector, ccaa))
+```
+
+```{r}
+atr |>
+  filter(ccaa == "ES") |>
+  drop_na() |>
+  ggplot(aes(x = date, y = acc_yoy, color = sector)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = label_percent()) +
+  labs(x = "Year",
+       y = "Year over year change",
+       title = "Work accidents in Spain from 2009 to 2021")
+```
+
+```{r}
+atr |>
+  filter(ccaa == "ES") |>
+  drop_na() |>
+  ggplot(aes(x = date, y = acc_yoy, fill = sector)) +
+  geom_col() +
+  facet_wrap(~sector) +
+  scale_y_continuous(labels = label_percent()) +
+  labs(x = "Year",
+       y = "Year over year change",
+       title = "Work accidents in Spain from 2009 to 2021") +
+  theme(legend.position = c(1, -0.5),
+        legend.justification = c(1,  -0.5))
+```
+
+```{r}
 atr |>
   filter(ccaa == "ES") |>
   ggplot(aes(x = date, y = accidents, color = sector)) +
@@ -67,7 +108,7 @@ Idea: Year over year change (per sector)
 ```{r}
 atr |>
   filter(ccaa != "ES",
-         sector == "total",
+         sector == "Total",
          year == 2021) |>
   ggplot(aes(x = accidents, y = fct_reorder(ccaa_name, accidents))) +
   geom_col() +
@@ -86,22 +127,10 @@ epa_sector |>
          sexo == "total")
 ```
 
-### Population
-
-```{r}
-pob_prov_edad |>
-  filter(periodo == 2021,
-         edad == "total",
-         sexo == "total")
-```
-
 \
 
 ```{r}
 #| warning: false
-
-library(mapSpain)
-library(ggrepel)
 
 ccaa <- esp_get_ccaa()
 can_box <- esp_get_can_box()
@@ -109,7 +138,7 @@ can_box <- esp_get_can_box()
 atr_2021 <- atr |>
   filter(year == 2021,
          ccaa != "ES",
-         sector == "total") |>
+         sector == "Total") |>
   mutate(ccaa = as.character(ccaa))
 
 ccaa_atr <- ccaa |>
@@ -131,10 +160,38 @@ ggplot(ccaa_atr) +
   scale_fill_gradientn(
     colors = hcl.colors(10, "Blues", rev = TRUE),
     n.breaks = 10,
-    guide = "legend",
+    guide = guide_legend(title = "Accidents per\n100k workers",
+                         reverse = TRUE),
   ) +
-  theme_minimal() +
+  theme_void() +
   theme(legend.position = c(0.1, 0.6)) +
   labs(x = NULL, y = NULL,
        title = "Work accidents in 2021 per autonomous community")
+```
+
+```{r}
+library(plotly)
+library(sf)
+
+
+ccaa <- esp_get_ccaa() |> sf::st_cast("MULTIPOLYGON")
+ccaa_atr <- ccaa |>
+  inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
+
+p <- ggplot(ccaa_atr, aes(label = ine.ccaa.name)) +
+  geom_sf(aes(fill = accidents),
+          color = "grey70",
+          linewidth = .3) +
+  scale_fill_gradientn(
+    colors = hcl.colors(10, "Blues", rev = TRUE),
+    n.breaks = 10,
+    guide = guide_legend(title = "Accidents per\n100k workers",
+                         reverse = TRUE),
+  ) +
+  theme_void() +
+  theme(legend.position = c(0.1, 0.6)) +
+  labs(x = NULL, y = NULL,
+       title = "Work accidents in 2021 per autonomous community")
+
+ggplotly(p)
 ```

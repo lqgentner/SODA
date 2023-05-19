@@ -56,6 +56,27 @@ atr |>
          title = "Work accidents in Spain from 2009 to 2021")
 ```
 
+```{r}
+atr |>
+  filter(ccaa == "ES") |>
+  ggplot(aes(x = date, y = accidents, color = sector)) +
+  geom_line() +
+  geom_point() +
+  gghighlight(sector != "total", label_key = sector, use_group_by = FALSE) +
+  facet_wrap(~sector)
+```
+
+```{r}
+atr |>
+  filter(sector == "Total",
+         year == 2021) |>
+  ggplot(aes(x = accidents, y = fct_reorder(ccaa_name, accidents))) +
+  geom_col() +
+  labs(x = "Work accidents per 100k workers",
+       y = NULL,
+       title = "Work accidents in 2021 per autonomous community")
+```
+
 ### Add year over year change
 
 ```{r}
@@ -93,45 +114,79 @@ atr |>
         legend.justification = c(1,  -0.5))
 ```
 
-```{r}
-atr |>
-  filter(ccaa == "ES") |>
-  ggplot(aes(x = date, y = accidents, color = sector)) +
-  geom_line() +
-  geom_point() +
-  gghighlight(sector != "total", label_key = sector, use_group_by = FALSE) +
-  facet_wrap(~sector)
-```
-
-Idea: Year over year change (per sector)
-
-```{r}
-atr |>
-  filter(ccaa != "ES",
-         sector == "Total",
-         year == 2021) |>
-  ggplot(aes(x = accidents, y = fct_reorder(ccaa_name, accidents))) +
-  geom_col() +
-  labs(x = "Work accidents per 100k workers",
-       y = NULL,
-       title = "Work accidents in 2021 per autonomous community")
-```
-
 ### Active working population
 
 ```{r}
-epa_sector |>
-  filter(region == "ES",
-         # periodo == "2020-09-30",
-         edad == "total",
-         sexo == "total")
+work_pop <- epa_sector |>
+  filter(edad == "total",
+         sexo == "total") |>
+  select(-edad, -sexo)
+work_pop |>
+  filter(region == "ES") |>
+  ggplot(aes(x = periodo, y = valor, color = sector)) +
+  geom_line() +
+  geom_point() +
+  labs(x = "Year", y = "100k workers",
+       title = "Active working population in Spain")
 ```
 
-\
+### Working population per sector
+```{r}
+# Add relative work pop per sector
+work_pop <- work_pop |>
+  mutate(rel = valor / valor[sector == "total"],
+         .by = c(periodo, region))
+
+work_pop |>
+  # Add full AACC names
+  left_join(ccaa_iso, by = join_by(region == iso)) |>
+  filter(periodo == "2023-01-31",
+         sector != "total",
+         !region %in% c("ES-ML", "ES-CE")) |>
+  ggplot(aes(rel,  fct_reorder(nombres, rel), fill = sector)) +
+  geom_col() +
+  scale_x_continuous(labels = label_percent()) +
+  labs(x = "Percentage", y = NULL,
+       title = "Relative working population per sector")
+```
+
+
+### Non-EU-working population
+```{r}
+work_noEU <- epa_nac |>
+  # Only view all sexes and working population
+  filter(sexo == "total",
+         dato == "act") |>
+  select(-sexo, -dato) |>
+  # Compute relative amount of workforce per nationality
+  mutate(rel = valor / valor[nac == "total"],
+         .by = c(region, periodo)) |>
+  # Only keep no-UE
+  filter(nac == "no-UE") |>
+  select(-valor, -nac) |>
+  rename(noEU_rel = rel)
+
+work_noEU |> head()
+```
+Plot non-EU workforce per AACC:
+```{r}
+work_noEU |>
+  filter(periodo == "2023-01-31") |>
+  # Add full AACC names
+  left_join(ccaa_iso, by = join_by(region == iso)) |>
+  ggplot(aes(x = noEU_rel, y = fct_reorder(nombres, noEU_rel))) +
+  geom_col() +
+  scale_x_continuous(labels = label_percent()) +
+  labs(x = "Percentage",
+       y = NULL,
+       title = "Non-EU working population in 2023 per autonomous community")
+```
+
 
 ```{r}
 #| warning: false
 
+# Get Spanish AACCs as simple features
 ccaa <- esp_get_ccaa()
 can_box <- esp_get_can_box()
 
@@ -141,57 +196,60 @@ atr_2021 <- atr |>
          sector == "Total") |>
   mutate(ccaa = as.character(ccaa))
 
+# Join SF and work accidents data
 ccaa_atr <- ccaa |>
   inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
 
 ggplot(ccaa_atr) +
+  # Plot AACC
   geom_sf(aes(fill = accidents),
           color = "grey70",
           linewidth = .3) +
+  # Plot canaries box
   geom_sf(data = can_box, color = "grey70") +
+  # Plot labels with accident number
   geom_label_repel(
     aes(label = round(accidents), geometry = geometry),
     stat = "sf_coordinates",
-    fill = alpha(c("white"),0.5),
+    fill = alpha(c("white"), 0.5),
     color = "black",
     size = 3,
     label.size = 0
   ) +
-  scale_fill_gradientn(
-    colors = hcl.colors(10, "Blues", rev = TRUE),
-    n.breaks = 10,
-    guide = guide_legend(title = "Accidents per\n100k workers",
-                         reverse = TRUE),
-  ) +
+  # Adjust color scale
+  scale_fill_distiller(palette = "Blues", direction = 1) +
   theme_void() +
-  theme(legend.position = c(0.1, 0.6)) +
-  labs(x = NULL, y = NULL,
-       title = "Work accidents in 2021 per autonomous community")
+  theme(legend.position = c(0.12, 0.6)) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Work accidents in 2021 per autonomous community",
+       fill = "Accidents per\n100k workers")
 ```
 
 ```{r}
+#| warning: false
+#| message: false
+
 library(plotly)
 library(sf)
 
 
-ccaa <- esp_get_ccaa() |> sf::st_cast("MULTIPOLYGON")
+ccaa <- esp_get_ccaa() |> st_cast("MULTIPOLYGON")
 ccaa_atr <- ccaa |>
   inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
 
-p <- ggplot(ccaa_atr, aes(label = ine.ccaa.name)) +
-  geom_sf(aes(fill = accidents),
+p <- ggplot(ccaa_atr) +
+  geom_sf(aes(fill = accidents,
+              text = paste0(ccaa_name, ":\n", round(accidents))),
           color = "grey70",
           linewidth = .3) +
-  scale_fill_gradientn(
-    colors = hcl.colors(10, "Blues", rev = TRUE),
-    n.breaks = 10,
-    guide = guide_legend(title = "Accidents per\n100k workers",
-                         reverse = TRUE),
-  ) +
+  geom_sf(data = can_box, color = "grey70") +
+  scale_fill_distiller(palette = "Blues", direction = 1) +
   theme_void() +
-  theme(legend.position = c(0.1, 0.6)) +
-  labs(x = NULL, y = NULL,
-       title = "Work accidents in 2021 per autonomous community")
+  labs(x = NULL,
+       y = NULL,
+       title = "Work accidents in 2021 per autonomous community",
+       fill = "Accidents per\n100k workers")
 
-ggplotly(p)
+ggplotly(p, tooltip = "text") |> style(hoveron = "fill")
 ```

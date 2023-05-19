@@ -7,6 +7,8 @@ date: today
 format:
   html:
     embed-resources: true
+    df-print: "paged"
+    toc: true
 editor: visual
 ---
 
@@ -110,11 +112,11 @@ atr |>
   labs(x = "Year",
        y = "Year over year change",
        title = "Work accidents in Spain from 2009 to 2021") +
-  theme(legend.position = c(1, -0.5),
-        legend.justification = c(1,  -0.5))
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0))
 ```
 
-### Active working population
+### Working population
 
 ```{r}
 work_pop <- epa_sector |>
@@ -130,7 +132,7 @@ work_pop |>
        title = "Active working population in Spain")
 ```
 
-### Working population per sector
+#### Working population per sector
 ```{r}
 # Add relative work pop per sector
 work_pop <- work_pop |>
@@ -138,7 +140,7 @@ work_pop <- work_pop |>
          .by = c(periodo, region))
 
 work_pop |>
-  # Add full AACC names
+  # Add full AC names
   left_join(ccaa_iso, by = join_by(region == iso)) |>
   filter(periodo == "2023-01-31",
          sector != "total",
@@ -151,7 +153,7 @@ work_pop |>
 ```
 
 
-### Non-EU-working population
+#### Non-EU-working population
 ```{r}
 work_noEU <- epa_nac |>
   # Only view all sexes and working population
@@ -168,11 +170,11 @@ work_noEU <- epa_nac |>
 
 work_noEU |> head()
 ```
-Plot non-EU workforce per AACC:
+Plot non-EU workforce per AC:
 ```{r}
 work_noEU |>
   filter(periodo == "2023-01-31") |>
-  # Add full AACC names
+  # Add full AC names
   left_join(ccaa_iso, by = join_by(region == iso)) |>
   ggplot(aes(x = noEU_rel, y = fct_reorder(nombres, noEU_rel))) +
   geom_col() +
@@ -182,11 +184,58 @@ work_noEU |>
        title = "Non-EU working population in 2023 per autonomous community")
 ```
 
+### GDP
+
+```{r}
+agr = c("vab_A", "vab_BE", "vab_F", "vab_GT", "pib")
+agr_rename = c(
+  "agricultura" = "vab_A",
+  "industria" = "vab_BE",
+  "construccion" = "vab_F",
+  "servicios" = "vab_GT",
+  "total" = "pib"
+)
+gdp <- pib_pm_oferta |>
+  filter(agregado %in% agr,
+         tipo == "indice",
+         dato == "base",
+         ajuste == "ajustado") |>
+  mutate(month = month(periodo), year = year(periodo)) |>
+  filter(month == 6) |>
+  # Remove identical elements
+  distinct(across(periodo:dato), .keep_all = TRUE) |>
+  select(periodo, agregado, valor) |>
+  rename(date = periodo, sector = agregado, gdp = valor) |>
+  mutate(sector = fct_recode(sector, !!!agr_rename))
+gdp |>
+  ggplot(aes(date, gdp, color = sector)) +
+  geom_line()
+
+```
+
+### Inflation
+
+```{r}
+infl <- ipc_ccaa |>
+  # Only extract annual inflation and price index over all groups
+  filter(grupo == "general",
+         dato %in% c("anual", "indice")) |>
+  select(-grupo) |>
+  pivot_wider(names_from = dato, values_from = valor) |>
+  rename(infl_cpi = indice, infl_ann = anual) |>
+  # Annual inflation in decimal format
+  mutate(infl_ann = infl_ann / 100)
+
+infl |> head()
+```
+
+
+## Map Plots
 
 ```{r}
 #| warning: false
 
-# Get Spanish AACCs as simple features
+# Get Spanish ACs as simple features
 ccaa <- esp_get_ccaa()
 can_box <- esp_get_can_box()
 
@@ -201,7 +250,7 @@ ccaa_atr <- ccaa |>
   inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
 
 ggplot(ccaa_atr) +
-  # Plot AACC
+  # Plot ACs
   geom_sf(aes(fill = accidents),
           color = "grey70",
           linewidth = .3) +

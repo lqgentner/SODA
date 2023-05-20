@@ -15,11 +15,10 @@ library(shinyWidgets)
 library(bslib)
 library(bsicons)
 library(tidyverse)
+library(scales)
 library(plotly)
 library(sf)
 library(mapSpain)
-library(ESdata)
-library(leaflet)
 
 conflicts_prefer(
   dplyr::filter,
@@ -29,7 +28,7 @@ conflicts_prefer(
 )
 
 # Get ATR data
-load("../data/ATR/ATR-I.1.3.RData")
+load("atr_joined.RData")
 
 
 # Get Spanish ACs as simple features
@@ -40,8 +39,8 @@ can_box <- esp_get_can_box()
 boxes <- layout_column_wrap(
   width = "250px",
   value_box(
-    title = "1st value", 
-    value = "123",
+    title = "Total", 
+    value = textOutput("yoy_2021"),
     showcase = bs_icon("bar-chart"),
     p("The 1st detail")
   ),
@@ -102,19 +101,19 @@ cond_sidebar <- sidebar(
 analysis_view <- page_fillable(
   padding = 0,
   h4("Analyzing the work accidents in Spain"),
-  boxes,
+  uiOutput("boxes"),
   p(),
   layout_column_wrap(
     width = 1/2,
-    height = 300,
+    height = 600,
     card(full_screen = TRUE,
       card_header("Number of work accidents in Spain"),
-      plotOutput("index_plot")
+      plotOutput("atr_plot")
     ),
     card(full_screen = TRUE,
       card_header("Annual change of work accidents in Spain"),
       card_body(class = "p-0",
-        "Plot"
+        plotOutput("atr_yoy_plot")
       )
     )
   )
@@ -125,13 +124,12 @@ map_view <- page_fillable(
   h4("Analyzing the work accidents in Spain"),
   p(),
   card(full_screen = TRUE,
-    card_header("A filling map"),
+    card_header("Map of work accidents in Spain"),
     card_body(class = "p-0",
       plotlyOutput("map_plot")
     )
   )
 )
-
 
 ui <- page_navbar(
     title = "SODA Dashboard",
@@ -148,6 +146,7 @@ ui <- page_navbar(
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
+  # Map plot
   output$map_plot <- renderPlotly({
     atr_filtered <- atr |>
       filter(year == input$year_select,
@@ -157,19 +156,20 @@ server <- function(input, output) {
     ccaa_atr <- ccaa |>
       inner_join(atr_filtered, by = join_by(iso2.ccaa.code == ccaa))
     p <- ggplot(ccaa_atr) +
-      geom_sf(aes(fill = accidents),
-                  #text = paste0(ccaa_name, ":\n", round(accidents))),
+      geom_sf(aes(fill = accidents,
+                  text = paste0(ccaa_name, ":\n", round(accidents))),
               color = "grey70",
               linewidth = .3) +
       geom_sf(data = can_box, color = "grey70") +
       scale_fill_distiller(palette = "Blues", direction = 1) +
       theme_minimal() +
       labs(fill = "Accidents per\n100k workers")
-    
-    ggplotly(p) |> style(hoveron = "fill")
+
+    ggplotly(p, tooltip = "text") |> style(hoveron = "fill")
   })
   
-  output$index_plot <- renderPlot({
+  # ATR plot
+  output$atr_plot <- renderPlot({
     atr |>
       filter(ccaa_name == input$ccaa_select) |>
       ggplot(aes(x = date, y = accidents, color = sector)) +
@@ -177,6 +177,72 @@ server <- function(input, output) {
       geom_point(size=2) +
       labs(x = "Year",
            y = "Work accidents per 100k workers")
+  })
+  
+  # ATR YoY change plot
+  output$atr_yoy_plot <- renderPlot({
+    atr |>
+      filter(ccaa_name == input$ccaa_select) |>
+      drop_na() |>
+      ggplot(aes(x = date, y = acc_yoy, color = sector)) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+      geom_line() +
+      geom_point() +
+      scale_y_continuous(labels = label_percent()) +
+      labs(x = "Year",
+           y = "Year over year change")
+  })
+  
+  output$boxes <- renderUI({
+    yoy <- atr |>
+      filter(year == 2021,
+             sector == "Total",
+             ccaa_name == input$ccaa_select) |>
+      pull(acc_yoy)
+    layout_column_wrap(
+      width = 1/2,
+      value_box(
+        title = "Total", 
+        value = percent(yoy[1]),
+        showcase = bs_icon("bar-chart"),
+        p("Year over year change")
+      ),
+      layout_column_wrap(
+        width = 1/2,
+        value_box(
+          title = "Total", 
+          value = percent(yoy[2]),
+          showcase = bs_icon("bar-chart"),
+          p("Year over year change")
+        ),
+        value_box(
+          title = "Total", 
+          value = percent(yoy[3]),
+          showcase = bs_icon("bar-chart"),
+          p("Year over year change")
+        ),
+        value_box(
+          title = "Total", 
+          value = percent(yoy[4]),
+          showcase = bs_icon("bar-chart"),
+          p("Year over year change")
+        ),
+        value_box(
+          title = "Total", 
+          value = percent(yoy[5]),
+          showcase = bs_icon("bar-chart"),
+          p("Year over year change")
+        ))
+    )
+  })
+  
+  # Output of Last year changes
+  output$yoy_2021 <- renderText({
+    atr |>
+      filter(year == 2021,
+             sector == "Total",
+             ccaa_name == input$ccaa_select) |>
+      pull(acc_yoy)
   })
 }
 

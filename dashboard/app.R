@@ -9,22 +9,32 @@
 # bslib 0.4.2.9000+ required
 # Install with devtools::install_github("rstudio/bslib")
 
-
+library(conflicted)
 library(shiny)
+library(shinyWidgets)
 library(bslib)
 library(bsicons)
 library(tidyverse)
 library(plotly)
+library(sf)
+library(mapSpain)
+library(ESdata)
 library(leaflet)
-library(shinyWidgets)
 
-plotly_widget <- plot_ly(x = diamonds$cut) %>%
-  config(displayModeBar = FALSE) %>%
-  layout(margin = list(t = 0, b = 0, l = 0, r = 0))
+conflicts_prefer(
+  dplyr::filter,
+  dplyr::select,
+  dplyr::lag,
+  plotly::layout
+)
 
-leaflet_widget <- leafletOptions(attributionControl = FALSE) %>%
-  leaflet(options = .) %>%
-  addTiles()
+# Get ATR data
+load("../data/ATR/ATR-I.1.3.RData")
+
+
+# Get Spanish ACs as simple features
+ccaa <- esp_get_ccaa() |> st_cast("MULTIPOLYGON")
+can_box <- esp_get_can_box()
 
 # Defining value boxes on Analysis page
 boxes <- layout_column_wrap(
@@ -55,31 +65,24 @@ boxes <- layout_column_wrap(
 # Defining the CCAA picker
 ccaa_picker <- selectInput(
   "ccaa_select",
-  label = "Select autonomous community",
-  choices = c(
-    "Choice 1",
-    "Choice 2",
-    "Choice 3"
-  ),
+  label = "Select autonomous community:",
+  choices = atr$ccaa_name |> levels(),
   selected = 1
 )
 
 # Defining the Year picker
 year_picker <- sliderTextInput(
   inputId = "year_select",
-  label = "Select a year:", 
-  choices = month.name
+  label = "Select year:", 
+  choices = atr$year |> unique(),
+  selected = 2021
 )
 
 # Defining the sector picker
 sector_picker <- selectInput(
   "sector_select",
-  label = "Select sector",
-  choices = c(
-    "Choice 1",
-    "Choice 2",
-    "Choice 3"
-  ),
+  label = "Select sector:",
+  choices = atr$sector |> levels(),
   selected = 1
 )
 
@@ -104,8 +107,16 @@ analysis_view <- page_fillable(
   layout_column_wrap(
     width = 1/2,
     height = 300,
-    card(full_screen = TRUE, card_header("A filling plot"), plotly_widget),
-    card(full_screen = TRUE, card_header("A filling map"), card_body(class = "p-0", leaflet_widget))
+    card(full_screen = TRUE,
+      card_header("Number of work accidents in Spain"),
+      plotOutput("index_plot")
+    ),
+    card(full_screen = TRUE,
+      card_header("Annual change of work accidents in Spain"),
+      card_body(class = "p-0",
+        "Plot"
+      )
+    )
   )
 )
 
@@ -113,7 +124,12 @@ map_view <- page_fillable(
   padding = 0,
   h4("Analyzing the work accidents in Spain"),
   p(),
-  card(full_screen = TRUE, card_header("A filling map"), card_body(class = "p-0", leaflet_widget))
+  card(full_screen = TRUE,
+    card_header("A filling map"),
+    card_body(class = "p-0",
+      plotlyOutput("map_plot")
+    )
+  )
 )
 
 
@@ -125,25 +141,42 @@ ui <- page_navbar(
       bootswatch = "minty"
     ),
     sidebar = cond_sidebar,
-    nav_panel("Analysis",
-      analysis_view),
-    nav_panel("Map",
-      map_view)
+    nav_panel("Analysis", analysis_view),
+    nav_panel("Map", map_view)
   )
 
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
-  
-  output$distPlot <- renderPlot({
-    # generate bins based on input$bins from ui.R
-    x    <- faithful[, 2]
-    bins <- seq(min(x), max(x), length.out = input$bins + 1)
+  output$map_plot <- renderPlotly({
+    atr_filtered <- atr |>
+      filter(year == input$year_select,
+             ccaa != "ES",
+             sector == input$sector_select) |>
+      mutate(ccaa = as.character(ccaa))
+    ccaa_atr <- ccaa |>
+      inner_join(atr_filtered, by = join_by(iso2.ccaa.code == ccaa))
+    p <- ggplot(ccaa_atr) +
+      geom_sf(aes(fill = accidents),
+                  #text = paste0(ccaa_name, ":\n", round(accidents))),
+              color = "grey70",
+              linewidth = .3) +
+      geom_sf(data = can_box, color = "grey70") +
+      scale_fill_distiller(palette = "Blues", direction = 1) +
+      theme_minimal() +
+      labs(fill = "Accidents per\n100k workers")
     
-    # draw the histogram with the specified number of bins
-    hist(x, breaks = bins, col = 'darkgray', border = 'white',
-         xlab = 'Waiting time to next eruption (in mins)',
-         main = 'Histogram of waiting times')
+    ggplotly(p) |> style(hoveron = "fill")
+  })
+  
+  output$index_plot <- renderPlot({
+    atr |>
+      filter(ccaa_name == input$ccaa_select) |>
+      ggplot(aes(x = date, y = accidents, color = sector)) +
+      geom_line() +
+      geom_point(size=2) +
+      labs(x = "Year",
+           y = "Work accidents per 100k workers")
   })
 }
 

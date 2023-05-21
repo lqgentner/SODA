@@ -20,7 +20,6 @@ library(scales)
 library(sf)
 library(mapSpain)
 library(ggrepel)
-library(shades)
 
 conflicts_prefer(
   dplyr::filter(),

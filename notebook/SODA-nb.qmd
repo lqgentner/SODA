@@ -305,3 +305,8 @@ p <- ggplot(ccaa_atr) +
 
 ggplotly(p, tooltip = "text") |> style(hoveron = "fill")
 ```
+
+```{r}
+# Save data for use in dashboard
+save(atr, file = "../dashboard/atr_joined.RData")
+```

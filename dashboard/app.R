@@ -13,14 +13,13 @@ library(conflicted)
 library(shiny)
 library(shinyWidgets)
 library(bslib)
-library(bsicons)
 library(fontawesome)
 library(thematic)
 library(tidyverse)
 library(scales)
-library(plotly)
 library(sf)
 library(mapSpain)
+library(ggrepel)
 
 conflicts_prefer(
   dplyr::filter,
@@ -52,40 +51,14 @@ soda_theme <- bs_theme(
   danger = color_lu[["Industry"]]
 )
 
+# Set global ggplot theme
+theme_set(theme_minimal())
+# Enable auto theming
 thematic_shiny(font = "auto", qualitative = soda_colors)
-
-
-
 
 # Get Spanish ACs as simple features
 ccaa <- esp_get_ccaa() |> st_cast("MULTIPOLYGON")
 can_box <- esp_get_can_box()
-
-# Defining value boxes on Analysis page
-boxes <- layout_column_wrap(
-  width = "250px",
-  value_box(
-    title = "Total", 
-    value = textOutput("yoy_2021"),
-    showcase = bs_icon("bar-chart"),
-    p("The 1st detail")
-  ),
-  value_box(
-    title = "2nd value", 
-    value = "456",
-    showcase = bs_icon("graph-up"),
-    p("The 2nd detail"),
-    p("The 3rd detail")
-  ),
-  value_box(
-    title = "3rd value", 
-    value = "789",
-    showcase = bs_icon("pie-chart"),
-    p("The 4th detail"),
-    p("The 5th detail"),
-    p("The 6th detail")
-  )
-)
 
 # Defining the CCAA picker
 ccaa_picker <- selectInput(
@@ -96,16 +69,11 @@ ccaa_picker <- selectInput(
 )
 
 # Defining the Year picker
-year_picker <- sliderInput(
+year_picker <- sliderTextInput(
   inputId = "year_select",
   label = "Select year:", 
-  # choices = atr$year |> unique(),
-  # selected = 2021
-  min = min(atr$date),
-  max = max(atr$date),
-  value = max(atr$date),
-  ticks = FALSE,
-  timeFormat = "%Y"
+  choices = atr$year |> unique(),
+  selected = max(atr$year)
 )
 
 # Defining the sector picker
@@ -125,27 +93,22 @@ cond_sidebar <- sidebar(
   conditionalPanel(
     "input.nav === 'Map'",
     year_picker,
-    sector_picker
+    sector_picker,
   )
 )
 
 analysis_view <- page_fillable(
   padding = 0,
-  h4("Analyzing the work accidents in Spain"),
   uiOutput("boxes"),
   p(),
   layout_column_wrap(
     width = 1/2,
-    height = 600,
-    card(full_screen = TRUE,
-      card_header("Number of work accidents"),
+    height = "600px",
+    card(card_header("Number of work accidents"),
       plotOutput("atr_plot")
     ),
-    card(full_screen = TRUE,
-      card_header("Annual change of work accidents"),
-      card_body(class = "p-0",
-        plotOutput("atr_yoy_plot")
-      )
+    card(card_header("Annual change of work accidents"),
+      plotOutput("atr_yoy_plot")
     )
   )
 )
@@ -156,8 +119,10 @@ map_view <- page_fillable(
   p(),
   card(full_screen = TRUE,
     card_header("Map of work accidents in Spain"),
-    card_body(class = "p-0",
-      plotlyOutput("map_plot")
+    card_body(
+      height = "600px",
+      class = "p-0",
+      plotOutput("map_plot")
     )
   )
 )
@@ -175,26 +140,43 @@ ui <- page_navbar(
 # Define server logic required to draw a histogram
 server <- function(input, output) {
   # Map plot
-  output$map_plot <- renderPlotly({
+  output$map_plot <- renderPlot({
+    # Filter work accidents data
     atr_filtered <- atr |>
       filter(year == input$year_select,
              ccaa != "ES",
              sector == input$sector_select) |>
       mutate(ccaa = as.character(ccaa))
+    
+    # Join with SF data
     ccaa_atr <- ccaa |>
       inner_join(atr_filtered, by = join_by(iso2.ccaa.code == ccaa))
-    p <- ggplot(ccaa_atr) +
-      geom_sf(aes(fill = accidents,
-                  text = paste0(ccaa_name, ":\n", round(accidents))),
+    
+    # Create plot
+    ggplot(ccaa_atr) +
+      # Plot ACs
+      geom_sf(aes(fill = accidents),
               color = "grey70",
               linewidth = .3) +
+      # Plot canaries box
       geom_sf(data = can_box, color = "grey70") +
+      # Plot labels with accident number
+      geom_label_repel(
+        aes(label = round(accidents), geometry = geometry),
+        stat = "sf_coordinates",
+        fill = alpha(c("white"), 0.5),
+        color = "black",
+        size = 3,
+        label.size = 0
+      ) +
+      # Adjust color scale
       scale_fill_gradient(low = color_lu[[input$sector_select]],
                           high = "white") +
-      theme_minimal() +
-      labs(fill = "Accidents per\n100k workers")
-
-    ggplotly(p, tooltip = "text") |> style(hoveron = "fill")
+      # theme_void() +
+      theme(legend.position = c(0.12, 0.6)) +
+      labs(x = NULL,
+           y = NULL,
+           fill = "Accidents per\n100k workers")
   })
   
   # ATR plot
@@ -232,7 +214,7 @@ server <- function(input, output) {
       deframe()
     
     layout_column_wrap(
-      width = 1/2,
+      width = "350px",
       value_box(
         title = "Total",
         class = class_lu[["Total"]],
@@ -240,37 +222,34 @@ server <- function(input, output) {
         showcase = fa("chart-line", height = "50px"),
         description
       ),
-      
-      layout_column_wrap(
-        width = 1/2,
-        value_box(
-          title = "Agriculture",
-          class = class_lu[["Agriculture"]],
-          value = percent(yoy_latest[["Agriculture"]]),
-          showcase = fa("wheat-awn", height = "50px"),
-          description
-        ),
-        value_box(
-          title = "Industry",
-          class = class_lu[["Industry"]],
-          value = percent(yoy_latest[["Industry"]]),
-          showcase = fa("screwdriver-wrench", height = "50px"),
-          description
-        ),
-        value_box(
-          title = "Construction",
-          class = class_lu[["Construction"]],
-          value = percent(yoy_latest[["Construction"]]),
-          showcase = fa("helmet-safety", height = "50px"),
-          description
-        ),
-        value_box(
-          title = "Services",
-          class = class_lu[["Services"]],
-          value = percent(yoy_latest[["Services"]]),
-          showcase = fa("store", height = "50px"),
-          description
-        ))
+      value_box(
+        title = "Agriculture",
+        class = class_lu[["Agriculture"]],
+        value = percent(yoy_latest[["Agriculture"]]),
+        showcase = fa("wheat-awn", height = "50px"),
+        description
+      ),
+      value_box(
+        title = "Industry",
+        class = class_lu[["Industry"]],
+        value = percent(yoy_latest[["Industry"]]),
+        showcase = fa("screwdriver-wrench", height = "50px"),
+        description
+      ),
+      value_box(
+        title = "Construction",
+        class = class_lu[["Construction"]],
+        value = percent(yoy_latest[["Construction"]]),
+        showcase = fa("helmet-safety", height = "50px"),
+        description
+      ),
+      value_box(
+        title = "Services",
+        class = class_lu[["Services"]],
+        value = percent(yoy_latest[["Services"]]),
+        showcase = fa("store", height = "50px"),
+        description
+      )
     )
   })
 }

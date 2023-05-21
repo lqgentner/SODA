@@ -20,12 +20,12 @@ library(scales)
 library(sf)
 library(mapSpain)
 library(ggrepel)
+library(shades)
 
 conflicts_prefer(
-  dplyr::filter,
-  dplyr::select,
-  dplyr::lag,
-  plotly::layout
+  dplyr::filter(),
+  dplyr::select(),
+  dplyr::lag()
 )
 
 # Get ATR data
@@ -37,7 +37,8 @@ soda_colors <- okabe_ito(5)[order(c(5, 2, 4, 3, 1))]
 sectors <- atr$sector |> levels()
 color_lu <- setNames(soda_colors, sectors)
 # Create bootswatch class look-up
-soda_classes <- c("bg-light", "bg-success", "bg-danger", "bg-info", "bg-warning")
+soda_classes <-
+  c("bg-light", "bg-success", "bg-danger", "bg-info", "bg-warning")
 class_lu <- setNames(soda_classes, sectors)
 
 # Defining the theme
@@ -87,18 +88,19 @@ sector_picker <- selectInput(
 # Defining the conditional sidebar
 cond_sidebar <- sidebar(
   conditionalPanel(
-    "input.nav === 'CCAA Analysis'",
+    "input.nav === 'Regional Analysis'",
     ccaa_picker
   ),
   conditionalPanel(
-    "input.nav === 'Map'",
+    "input.nav === 'Overview Map'",
     year_picker,
     sector_picker,
   )
 )
 
+# Defining the Analysis page
 analysis_view <- page_fillable(
-  padding = 0,
+  h2("Work accidents in Spain after autonomous community"),
   uiOutput("boxes"),
   p(),
   layout_column_wrap(
@@ -113,18 +115,19 @@ analysis_view <- page_fillable(
   )
 )
 
+# Defining the Map page
 map_view <- page_fillable(
-  padding = 0,
-  h4("Analyzing the work accidents in Spain"),
-  p(),
-  card(full_screen = TRUE,
-    card_header("Map of work accidents in Spain"),
-    card_body(
-      height = "600px",
-      class = "p-0",
-      plotOutput("map_plot")
-    )
+  h2("Work accidents in Spain after sector and year"),
+  card(height = "800px",
+    card_header("Number of work accidents"),
+    plotOutput("map_plot")
   )
+)
+
+# Defining the footer
+foot <- page_fillable( 
+  hr("2023 | Luis Gentner"),
+  markdown("Data from the Spanish [Ministry of Labour and Social Economy](https://www.mites.gob.es/estadisticas/eat/welcome.htm).")
 )
 
 ui <- page_navbar(
@@ -132,8 +135,10 @@ ui <- page_navbar(
     id = "nav",
     theme = soda_theme,
     sidebar = cond_sidebar,
-    nav_panel("CCAA Analysis", analysis_view),
-    nav_panel("Map", map_view)
+    footer = foot,
+    bg = "#2c3e50",
+    nav_panel("Regional Analysis", analysis_view),
+    nav_panel("Overview Map", map_view),
   )
 
 
@@ -141,26 +146,18 @@ ui <- page_navbar(
 server <- function(input, output) {
   # Map plot
   output$map_plot <- renderPlot({
-    # Filter work accidents data
     atr_filtered <- atr |>
       filter(year == input$year_select,
              ccaa != "ES",
              sector == input$sector_select) |>
       mutate(ccaa = as.character(ccaa))
-    
-    # Join with SF data
     ccaa_atr <- ccaa |>
       inner_join(atr_filtered, by = join_by(iso2.ccaa.code == ccaa))
-    
-    # Create plot
     ggplot(ccaa_atr) +
-      # Plot ACs
       geom_sf(aes(fill = accidents),
               color = "grey70",
               linewidth = .3) +
-      # Plot canaries box
       geom_sf(data = can_box, color = "grey70") +
-      # Plot labels with accident number
       geom_label_repel(
         aes(label = round(accidents), geometry = geometry),
         stat = "sf_coordinates",
@@ -169,9 +166,8 @@ server <- function(input, output) {
         size = 3,
         label.size = 0
       ) +
-      # Adjust color scale
-      scale_fill_gradient(low = color_lu[[input$sector_select]],
-                          high = "white") +
+      scale_fill_gradient(high = color_lu[[input$sector_select]],
+                          low = "white") +
       # theme_void() +
       theme(legend.position = c(0.12, 0.6)) +
       labs(x = NULL,
@@ -204,6 +200,7 @@ server <- function(input, output) {
            y = "Year over year change")
   })
   
+  # Value boxes
   output$boxes <- renderUI({
     description <- p("Annual change from last year")
     yoy_latest <- atr |>

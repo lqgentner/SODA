@@ -2,7 +2,7 @@
 # SODA
 # Spanish Occupational Accidents Data Analysis
 # Shiny Dashboard
-# 
+#
 # Author: Luis Gentner
 # Created: 2023-05-20
 #
@@ -21,19 +21,13 @@ library(sf)
 library(mapSpain)
 library(ggrepel)
 
-conflicts_prefer(
-  dplyr::filter(),
-  dplyr::select(),
-  dplyr::lag()
-)
-
 # Get ATR data
 load("atr_joined.RData")
 
 # Defining color scale
 soda_colors <- okabe_ito(5)[order(c(5, 2, 4, 3, 1))]
 # Create color look-up
-sectors <- atr$sector |> levels()
+sectors <- atr$sector_en |> levels()
 color_lu <- setNames(soda_colors, sectors)
 # Create bootswatch class look-up
 soda_classes <-
@@ -71,7 +65,7 @@ ccaa_picker <- selectInput(
 # Defining the Year picker
 year_picker <- sliderTextInput(
   inputId = "year_select",
-  label = "Select year:", 
+  label = "Select year:",
   choices = atr$year |> unique(),
   selected = max(atr$year)
 )
@@ -80,7 +74,7 @@ year_picker <- sliderTextInput(
 sector_picker <- selectInput(
   "sector_select",
   label = "Select sector:",
-  choices = atr$sector |> levels(),
+  choices = atr$sector_en |> levels(),
   selected = 1
 )
 
@@ -103,13 +97,13 @@ analysis_view <- page_fillable(
   uiOutput("boxes"),
   p(),
   layout_column_wrap(
-    width = 1/2,
+    width = "400px",
     height = "600px",
     card(card_header("Number of work accidents"),
-      plotOutput("atr_plot")
+      card_body(plotOutput("atr_plot"))
     ),
     card(card_header("Annual change of work accidents"),
-      plotOutput("atr_yoy_plot")
+      card_body(plotOutput("atr_yoy_plot"))
     )
   )
 )
@@ -117,25 +111,30 @@ analysis_view <- page_fillable(
 # Defining the Map page
 map_view <- page_fillable(
   h2("Work accidents in Spain after sector and year"),
-  card(height = "800px",
+  card(full_screen = TRUE, height = "600px",
     card_header("Number of work accidents"),
-    plotOutput("map_plot")
+    card_body(class = "p-0", plotOutput("map_plot"))
   )
 )
 
 # Defining the footer
-foot <- page_fillable( 
-  hr("2023 | Luis Gentner"),
-  markdown("Data from the Spanish [Ministry of Labour and Social Economy](https://www.mites.gob.es/estadisticas/eat/welcome.htm).")
+foot <- page_fillable(
+  hr(),
+  p("2023 Luis Gentner | Data from the Spanish",
+    a("Ministry of Labour and Social Economy",
+      href = "https://www.mites.gob.es/estadisticas/eat/welcome.htm"),
+    ".", style = "font-size:14px"
+  )
 )
 
 ui <- page_navbar(
     title = "SODA Dashboard",
     id = "nav",
+    fillable = "Dashboard",
     theme = soda_theme,
+    inverse = FALSE,
     sidebar = cond_sidebar,
     footer = foot,
-    bg = "#2c3e50",
     nav_panel("Regional Analysis", analysis_view),
     nav_panel("Overview Map", map_view),
   )
@@ -148,7 +147,7 @@ server <- function(input, output) {
     atr_filtered <- atr |>
       filter(year == input$year_select,
              ccaa != "ES",
-             sector == input$sector_select) |>
+             sector_en == input$sector_select) |>
       mutate(ccaa = as.character(ccaa))
     ccaa_atr <- ccaa |>
       inner_join(atr_filtered, by = join_by(iso2.ccaa.code == ccaa))
@@ -173,32 +172,36 @@ server <- function(input, output) {
            y = NULL,
            fill = "Accidents per\n100k workers")
   })
-  
+
   # ATR plot
   output$atr_plot <- renderPlot({
     atr |>
       filter(ccaa_name == input$ccaa_select) |>
-      ggplot(aes(x = date, y = accidents, color = sector)) +
+      ggplot(aes(x = date, y = accidents, color = sector_en)) +
       geom_line() +
-      geom_point(size=2) +
-      labs(x = "Year",
+      geom_point(size = 2) +
+      scale_x_date(date_minor_breaks = "years") +
+      theme(legend.position = "bottom") +
+      labs(x = "Year", color = "Sector",
            y = "Work accidents per 100k workers")
   })
-  
+
   # ATR YoY change plot
   output$atr_yoy_plot <- renderPlot({
     atr |>
       filter(ccaa_name == input$ccaa_select) |>
       drop_na() |>
-      ggplot(aes(x = date, y = acc_yoy, color = sector)) +
+      ggplot(aes(x = date, y = acc_yoy, color = sector_en)) +
       geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
       geom_line() +
       geom_point() +
+      scale_x_date(date_minor_breaks = "years") +
       scale_y_continuous(labels = label_percent()) +
-      labs(x = "Year",
+      theme(legend.position="bottom") +
+      labs(x = "Year", color = "Sector",
            y = "Year over year change")
   })
-  
+
   # Value boxes
   output$boxes <- renderUI({
     description <- p("Annual change from last year")
@@ -206,11 +209,11 @@ server <- function(input, output) {
       # Get named vector of latest yoy
       filter(year == max(year),
              ccaa_name == input$ccaa_select) |>
-      select(sector, acc_yoy) |>
+      select(sector_en, acc_yoy) |>
       deframe()
-    
+
     layout_column_wrap(
-      width = "350px",
+      width = "250px",
       value_box(
         title = "Total",
         class = class_lu[["Total"]],
@@ -250,5 +253,5 @@ server <- function(input, output) {
   })
 }
 
-# Run the application 
+# Run the application
 shinyApp(ui = ui, server = server)

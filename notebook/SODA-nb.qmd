@@ -18,16 +18,16 @@ library(conflicted)
 library(tidyverse)
 library(scales)
 library(ggrepel)
-library(gghighlight)
 library(mapSpain)
 library(ESdata)
 
 conflicts_prefer(
-  dplyr::filter,
-  dplyr::select,
-  dplyr::lag,
-  plotly::layout
+  dplyr::filter(),
+  dplyr::select(),
+  dplyr::lag()
 )
+
+theme_set(theme_minimal())
 ```
 
 ## Introduction
@@ -36,42 +36,26 @@ This report covers the analysis of occupational accidents, also known as work ac
 
 ## Data Exploration
 
-### Work Accident Data
+### Work accidents per sector
 
 ```{r}
 load("../data/atr_clean.RData")
 atr |>
-  filter(sector == "Total",
-         ccaa == "ES") |>
-  ggplot(aes(date, accidents)) +
-  geom_line() +
-  geom_point()
-```
-
-```{r}
-atr |>
   filter(ccaa == "ES") |>
-  ggplot(aes(x = date, y = accidents, color = sector)) +
+  ggplot(aes(x = date, y = accidents, color = sector_en)) +
   geom_line() +
   geom_point(size=2) +
-    labs(x = "Year",
+  scale_x_date(date_minor_breaks = "years") +
+    labs(x = "Year", color = "Sector",
          y = "Work accidents per 100k workers",
          title = "Work accidents in Spain from 2009 to 2021")
 ```
 
-```{r}
-atr |>
-  filter(ccaa == "ES") |>
-  ggplot(aes(x = date, y = accidents, color = sector)) +
-  geom_line() +
-  geom_point() +
-  gghighlight(sector != "total", label_key = sector, use_group_by = FALSE) +
-  facet_wrap(~sector)
-```
+### Work accidents per autonomous community
 
 ```{r}
 atr |>
-  filter(sector == "Total",
+  filter(sector == "total",
          year == 2021) |>
   ggplot(aes(x = accidents, y = fct_reorder(ccaa_name, accidents))) +
   geom_col() +
@@ -80,7 +64,52 @@ atr |>
        title = "Work accidents in 2021 per autonomous community")
 ```
 
-### Add year over year change
+### Map plot
+
+```{r}
+#| warning: false
+
+# Get Spanish ACs as simple features
+ccaa <- esp_get_ccaa()
+can_box <- esp_get_can_box()
+
+atr_2021 <- atr |>
+  filter(year == 2021,
+         ccaa != "ES",
+         sector == "total") |>
+  mutate(ccaa = as.character(ccaa))
+
+# Join SF and work accidents data
+ccaa_atr <- ccaa |>
+  inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
+
+ggplot(ccaa_atr) +
+  # Plot ACs
+  geom_sf(aes(fill = accidents),
+          color = "grey70",
+          linewidth = .3) +
+  # Plot canaries box
+  geom_sf(data = can_box, color = "grey70") +
+  # Plot labels with accident number
+  geom_label_repel(
+    aes(label = round(accidents), geometry = geometry),
+    stat = "sf_coordinates",
+    fill = alpha(c("white"), 0.5),
+    color = "black",
+    size = 3,
+    label.size = 0
+  ) +
+  # Adjust color scale
+  scale_fill_distiller(palette = "Blues", direction = 1) +
+  theme_void() +
+  theme(legend.position = c(0.12, 0.6)) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Work accidents in 2021 per autonomous community",
+       fill = "Accidents per\n100k workers")
+```
+
+### Annual change rate
 
 ```{r}
 atr <- atr |>
@@ -92,32 +121,28 @@ atr <- atr |>
 atr |>
   filter(ccaa == "ES") |>
   drop_na() |>
-  ggplot(aes(x = date, y = acc_yoy, color = sector)) +
+  ggplot(aes(x = date, y = acc_yoy, color = sector_en)) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
   geom_line() +
   geom_point() +
+  scale_x_date(date_minor_breaks = "years") +
   scale_y_continuous(labels = label_percent()) +
-  labs(x = "Year",
+  labs(x = "Year", color = "Sector",
        y = "Year over year change",
        title = "Work accidents in Spain from 2009 to 2021")
 ```
 
 ```{r}
-atr |>
-  filter(ccaa == "ES") |>
-  drop_na() |>
-  ggplot(aes(x = date, y = acc_yoy, fill = sector)) +
-  geom_col() +
-  facet_wrap(~sector) +
-  scale_y_continuous(labels = label_percent()) +
-  labs(x = "Year",
-       y = "Year over year change",
-       title = "Work accidents in Spain from 2009 to 2021") +
-  theme(legend.position = c(1, 0),
-        legend.justification = c(1, 0))
+#| echo: false
+# Save data for use in dashboard
+save(atr, file = "../dashboard/atr_joined.RData")
 ```
 
+## Correlation Analysis
+
 ### Working population
+
+#### Absolute working population
 
 ```{r}
 work_pop <- epa_sector |>
@@ -128,22 +153,24 @@ work_pop |>
   filter(region == "ES") |>
   ggplot(aes(x = periodo, y = valor, color = sector)) +
   geom_line() +
-  geom_point() +
+  scale_x_date(date_minor_breaks = "years") +
   labs(x = "Year", y = "100k workers",
        title = "Active working population in Spain")
 ```
 
 #### Working population per sector
 
+Plot per autonomous community:
+
 ```{r}
 # Add relative work pop per sector
 work_pop <- work_pop |>
   mutate(rel = valor / valor[sector == "total"],
-         .by = c(periodo, region))
+         .by = c(periodo, region)) |>
+  # Add full AC names
+  left_join(ccaa_iso, by = join_by(region == iso))
 
 work_pop |>
-  # Add full AC names
-  left_join(ccaa_iso, by = join_by(region == iso)) |>
   filter(periodo == "2023-01-31",
          sector != "total",
          !region %in% c("ES-ML", "ES-CE")) |>
@@ -151,7 +178,21 @@ work_pop |>
   geom_col() +
   scale_x_continuous(labels = label_percent()) +
   labs(x = "Percentage", y = NULL,
-       title = "Relative working population per sector")
+       title = "Relative working population per sector in 2023")
+```
+
+Plot time trend:
+
+```{r}
+work_pop |>
+  filter(sector != "total",
+         region == "ES") |>
+  ggplot(aes(periodo,  rel, fill = sector)) +
+  geom_area() +
+  scale_x_date(date_minor_breaks = "years") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(x = "Date", y = "Percentage", fill = "Sector",
+       title = "Relative working population in Spain per sector")
 ```
 
 #### Non-EU-working population
@@ -201,23 +242,23 @@ agr_rename = c(
 )
 gdp <- pib_pm_oferta |>
   filter(agregado %in% agr,
-         tipo == "indice",
+         tipo == "valor",
          dato == "base",
          ajuste == "ajustado") |>
   mutate(month = month(periodo), year = year(periodo)) |>
   filter(month == 6) |>
-  # Remove identical elements
-  distinct(across(periodo:dato), .keep_all = TRUE) |>
   select(periodo, agregado, valor) |>
   rename(date = periodo, sector = agregado, gdp = valor) |>
   mutate(sector = fct_recode(sector, !!!agr_rename))
 gdp |>
   ggplot(aes(date, gdp, color = sector)) +
-  geom_line()
+  geom_line() +
+  labs(x = "Year", y = "GDP",
+       title = "Gross domestic product of Spain")
 
 ```
 
-### Inflation
+### Inflation rate and consumer price index
 
 ```{r}
 infl <- ipc_ccaa |>
@@ -230,83 +271,16 @@ infl <- ipc_ccaa |>
   # Annual inflation in decimal format
   mutate(infl_ann = infl_ann / 100)
 
-infl |> head()
-```
-
-## Map Plots
-
-```{r}
-#| warning: false
-
-# Get Spanish ACs as simple features
-ccaa <- esp_get_ccaa()
-can_box <- esp_get_can_box()
-
-atr_2021 <- atr |>
-  filter(year == 2021,
-         ccaa != "ES",
-         sector == "Total") |>
-  mutate(ccaa = as.character(ccaa))
-
-# Join SF and work accidents data
-ccaa_atr <- ccaa |>
-  inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
-
-ggplot(ccaa_atr) +
-  # Plot ACs
-  geom_sf(aes(fill = accidents),
-          color = "grey70",
-          linewidth = .3) +
-  # Plot canaries box
-  geom_sf(data = can_box, color = "grey70") +
-  # Plot labels with accident number
-  geom_label_repel(
-    aes(label = round(accidents), geometry = geometry),
-    stat = "sf_coordinates",
-    fill = alpha(c("white"), 0.5),
-    color = "black",
-    size = 3,
-    label.size = 0
-  ) +
-  # Adjust color scale
-  scale_fill_distiller(palette = "Blues", direction = 1) +
-  theme_void() +
-  theme(legend.position = c(0.12, 0.6)) +
-  labs(x = NULL,
-       y = NULL,
-       title = "Work accidents in 2021 per autonomous community",
-       fill = "Accidents per\n100k workers")
+infl |>
+  filter(region == "ES") |>
+  ggplot(aes(periodo, infl_ann)) +
+  geom_line() +
+  scale_x_date(date_minor_breaks = "years") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(x = "Year", y = "Percentage",
+       title = "Annual inflation in Spain")
 ```
 
 ```{r}
-#| warning: false
-#| message: false
-
-library(plotly)
-library(sf)
-
-
-ccaa <- esp_get_ccaa() |> st_cast("MULTIPOLYGON")
-ccaa_atr <- ccaa |>
-  inner_join(atr_2021, by = join_by(iso2.ccaa.code == ccaa))
-
-p <- ggplot(ccaa_atr) +
-  geom_sf(aes(fill = accidents,
-              text = paste0(ccaa_name, ":\n", round(accidents))),
-          color = "grey70",
-          linewidth = .3) +
-  geom_sf(data = can_box, color = "grey70") +
-  scale_fill_distiller(palette = "Blues", direction = 1) +
-  theme_void() +
-  labs(x = NULL,
-       y = NULL,
-       title = "Work accidents in 2021 per autonomous community",
-       fill = "Accidents per\n100k workers")
-
-ggplotly(p, tooltip = "text") |> style(hoveron = "fill")
-```
-
-```{r}
-# Save data for use in dashboard
-save(atr, file = "../dashboard/atr_joined.RData")
+sessionInfo()
 ```

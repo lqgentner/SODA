@@ -5,7 +5,7 @@ library(readxl)
 library(ESdata)
 
 # Import data
-atr <- read_excel("data/atr_raw/ATR_2009-2021_clean.xlsx",
+atr <- read_excel("../data/atr_raw/ATR_2009-2021_clean.xlsx",
                   sheet = "ATR-I.1.3",
                   range = "A7:O102")
 
@@ -22,14 +22,15 @@ renamed_ccaa = c(
   "Comunidad Foral de Navarra" = "Navarra (Comunidad Foral de)",
   "La Rioja" = "Rioja (La)"
 )
-# Sector in English
-renamed_sector = c(
-  "Total" = "total",
-  "Agriculture" = "agrario",
-  "Industry" = "industria",
-  "Construction" = "construccion",
-  "Services" = "servicios"
-)
+# Data frame with translated sector names
+sector_trans = tribble(
+  ~sector_en, ~sector,
+  "Total", "total",
+  "Agriculture", "agrario",
+  "Industry", "industria",
+  "Construction", "construccion",
+  "Services", "servicios"
+) |> mutate(across(everything(), as_factor))
 
 # Name and ISO label of autonomous communities
 ccaa_iso <- ccaa_iso |>
@@ -40,9 +41,10 @@ atr <- atr |>
   mutate(across(c(sector, region), as_factor)) |>
   # Drop autonomous cities
   filter(region != "Ceuta y Melilla") |>
-  # Rename regions and sectors
-  mutate(region = fct_recode(region,!!!renamed_ccaa),
-         sector = fct_recode(sector, !!!renamed_sector)) |>
+  # Rename regions
+  mutate(region = fct_recode(region,!!!renamed_ccaa)) |>
+  # Add English sector names
+  full_join(sector_trans, by = "sector") |>
   # Join with ISO names
   left_join(ccaa_iso,
             by = join_by(region == nombres)) |>
@@ -64,6 +66,6 @@ atr <- atr |>
            accidents)
 
 # Save
-save(atr, file = "data/atr_clean.RData")
+save(atr, file = "../data/atr_clean.RData")
 
 atr

@@ -16,6 +16,9 @@ editor: visual
 #| message: false
 library(conflicted)
 library(tidyverse)
+library(tidymodels)
+library(vip)
+library(corrr)
 library(scales)
 library(ggrepel)
 library(mapSpain)
@@ -30,13 +33,13 @@ conflicts_prefer(
 theme_set(theme_minimal())
 ```
 
-## Introduction
+# Introduction
 
 This report covers the analysis of occupational accidents, also known as work accidents, in Spain
 
-## Data Exploration
+# Data Exploration
 
-### Work accidents per sector
+## Work accidents per sector
 
 ```{r}
 load("../data/atr_clean.RData")
@@ -51,7 +54,7 @@ atr |>
          title = "Work accidents in Spain from 2009 to 2021")
 ```
 
-### Work accidents per autonomous community
+## Work accidents per autonomous community
 
 ```{r}
 atr |>
@@ -109,12 +112,15 @@ ggplot(ccaa_atr) +
        fill = "Accidents per\n100k workers")
 ```
 
-### Annual change rate
+## Annual change rate
 
 ```{r}
 atr <- atr |>
+  # Annual change rate
   mutate(acc_yoy = (accidents - lag(accidents)) / lag(accidents),
-         .by = c(sector, ccaa))
+         .by = c(sector, ccaa)) |>
+  # Numeric year column
+  mutate(year = year(date))
 ```
 
 ```{r}
@@ -138,43 +144,45 @@ atr |>
 save(atr, file = "../dashboard/atr_joined.RData")
 ```
 
-## Correlation Analysis
+# Comparison with economic data
 
-### Working population
+## Working population
 
-#### Absolute working population
+### Absolute working population
 
 ```{r}
-work_pop <- epa_sector |>
+wpop <- epa_sector |>
   filter(edad == "total",
          sexo == "total") |>
-  select(-edad, -sexo)
-work_pop |>
+  select(-edad, -sexo) |>
+  rename(wpop = valor)
+wpop |>
   filter(region == "ES") |>
-  ggplot(aes(x = periodo, y = valor, color = sector)) +
+  ggplot(aes(x = periodo, y = wpop, color = sector)) +
   geom_line() +
   scale_x_date(date_minor_breaks = "years") +
-  labs(x = "Year", y = "100k workers",
+  labs(x = "Year", y = "100k workers", color = "Sector",
        title = "Active working population in Spain")
 ```
 
-#### Working population per sector
+### Working population per sector
 
 Plot per autonomous community:
 
 ```{r}
 # Add relative work pop per sector
-work_pop <- work_pop |>
-  mutate(rel = valor / valor[sector == "total"],
-         .by = c(periodo, region)) |>
+wpop <- wpop |>
+  mutate(wpop_rel = wpop / wpop[sector == "total"],
+         .by = c(periodo, region))
+# Plot
+wpop |>
   # Add full AC names
-  left_join(ccaa_iso, by = join_by(region == iso))
-
-work_pop |>
+  left_join(ccaa_iso, by = join_by(region == iso)) |>
   filter(periodo == "2023-01-31",
          sector != "total",
          !region %in% c("ES-ML", "ES-CE")) |>
-  ggplot(aes(rel,  fct_reorder(nombres, rel), fill = sector)) +
+  ggplot(aes(x = wpop_rel, y = fct_rev(fct_reorder(nombres, wpop_rel)),
+             fill = sector)) +
   geom_col() +
   scale_x_continuous(labels = label_percent()) +
   labs(x = "Percentage", y = NULL,
@@ -184,10 +192,10 @@ work_pop |>
 Plot time trend:
 
 ```{r}
-work_pop |>
+wpop |>
   filter(sector != "total",
          region == "ES") |>
-  ggplot(aes(periodo,  rel, fill = sector)) +
+  ggplot(aes(periodo,  wpop_rel, fill = sector)) +
   geom_area() +
   scale_x_date(date_minor_breaks = "years") +
   scale_y_continuous(labels = label_percent()) +
@@ -195,41 +203,41 @@ work_pop |>
        title = "Relative working population in Spain per sector")
 ```
 
-#### Non-EU-working population
+### Non-EU-working population
 
 ```{r}
-work_noEU <- epa_nac |>
+wpop_noEU <- epa_nac |>
   # Only view all sexes and working population
   filter(sexo == "total",
          dato == "act") |>
   select(-sexo, -dato) |>
   # Compute relative amount of workforce per nationality
-  mutate(rel = valor / valor[nac == "total"],
+  mutate(wpop_noEU_rel = valor / valor[nac == "total"],
          .by = c(region, periodo)) |>
   # Only keep no-UE
   filter(nac == "no-UE") |>
-  select(-valor, -nac) |>
-  rename(noEU_rel = rel)
+  select(-valor, -nac)
 
-work_noEU |> head()
+wpop_noEU |> head()
 ```
 
 Plot non-EU workforce per AC:
 
 ```{r}
-work_noEU |>
+wpop_noEU |>
   filter(periodo == "2023-01-31") |>
   # Add full AC names
   left_join(ccaa_iso, by = join_by(region == iso)) |>
-  ggplot(aes(x = noEU_rel, y = fct_reorder(nombres, noEU_rel))) +
+  ggplot(aes(x = wpop_noEU_rel,
+             y = fct_reorder(nombres, wpop_noEU_rel))) +
   geom_col() +
   scale_x_continuous(labels = label_percent()) +
   labs(x = "Percentage",
        y = NULL,
-       title = "Non-EU working population in 2023 per autonomous community")
+       title = "Non-EU working population in 2023")
 ```
 
-### GDP
+## GDP
 
 ```{r}
 agr = c("vab_A", "vab_BE", "vab_F", "vab_GT", "pib")
@@ -242,23 +250,50 @@ agr_rename = c(
 )
 gdp <- pib_pm_oferta |>
   filter(agregado %in% agr,
-         tipo == "valor",
-         dato == "base",
+         dato %in% c("base", "var_anual"),
          ajuste == "ajustado") |>
-  mutate(month = month(periodo), year = year(periodo)) |>
+  pivot_wider(names_from = c(tipo, dato), values_from = valor) |>
+  mutate(month = month(periodo)) |>
+  # Only use data from 06-30
   filter(month == 6) |>
-  select(periodo, agregado, valor) |>
-  rename(date = periodo, sector = agregado, gdp = valor) |>
-  mutate(sector = fct_recode(sector, !!!agr_rename))
+  select(-nivel, -ajuste, -month) |>
+  mutate(agregado = fct_recode(agregado, !!!agr_rename))
 gdp |>
-  ggplot(aes(date, gdp, color = sector)) +
+  ggplot(aes(periodo, indice_base, color = agregado)) +
   geom_line() +
-  labs(x = "Year", y = "GDP",
+  labs(x = "Year", y = "Indexed GDP",
        title = "Gross domestic product of Spain")
 
 ```
 
-### Inflation rate and consumer price index
+### Correlation analysis
+
+To chose with which GDP value to go forward, I analyze the correlations between the accidents and GDP values. I only consider the whole country and the accidents over all sectors.
+
+```{r}
+#| message: false
+
+# Join GDP and accident data
+atr |>
+  # Only consider whole country and total GDP
+  filter(ccaa == "ES",
+         sector == "total") |>
+  select(date, sector, accidents, acc_yoy) |>
+  left_join(gdp, by = join_by(date == periodo, sector == agregado)) |>
+  correlate() |>
+  focus(accidents, acc_yoy)
+```
+
+The indexed values show a higher correlation than the actual values. We choose keep both the base and annual variations of the indexed GDP.
+
+```{r}
+gdp <- gdp |>
+  select(-starts_with("valor")) |>
+  rename(gdp_idx = indice_base,
+         gdp_idx_yoy = indice_var_anual)
+```
+
+## Inflation rate and consumer price index
 
 ```{r}
 infl <- ipc_ccaa |>
@@ -267,13 +302,13 @@ infl <- ipc_ccaa |>
          dato %in% c("anual", "indice")) |>
   select(-grupo) |>
   pivot_wider(names_from = dato, values_from = valor) |>
-  rename(infl_cpi = indice, infl_ann = anual) |>
+  rename(infl_cpi = indice, infl_yoy = anual) |>
   # Annual inflation in decimal format
-  mutate(infl_ann = infl_ann / 100)
+  mutate(infl_yoy = infl_yoy / 100)
 
 infl |>
   filter(region == "ES") |>
-  ggplot(aes(periodo, infl_ann)) +
+  ggplot(aes(periodo, infl_yoy)) +
   geom_line() +
   scale_x_date(date_minor_breaks = "years") +
   scale_y_continuous(labels = label_percent()) +
@@ -281,6 +316,113 @@ infl |>
        title = "Annual inflation in Spain")
 ```
 
+## Analysis of the influence of economic data using machine learning
+
+#### Dataset joing
+
+To DO GDP: Merging agregado with sectors...
+
+```{r}
+joined <- atr |>
+  # Removing missing values
+  drop_na() |>
+  # Join with working population data
+  left_join(wpop, by = join_by(date == periodo, sector, ccaa == region)) |>
+  # Join with non-EU working population data
+  left_join(wpop_noEU, by = join_by(date == periodo, ccaa == region)) |>
+  # Join with GDP data
+  left_join(gdp, by = join_by(date == periodo, sector == agregado)) |>
+  # Join with inflation data
+  left_join(infl, by = join_by(date == periodo, ccaa == region)) |>
+  # Remove unneeded columns
+  select(sector, ccaa, year, accidents, wpop:infl_yoy)
+str(joined)
+```
+
+#### Recipe creation
+
+Scaling the outcome variable (not possible within recipe):
+
+```{r}
+joined <- joined |>
+  # Scaling the outcome variable
+  mutate(accidents = log(accidents, base = 10))
+```
+
+```{r}
+acc_split <- initial_split(joined, prop = 0.8)
+acc_train <- training(acc_split)
+acc_test <- testing(acc_split)
+
+rec <- recipe(accidents ~ ., data = acc_split) |>
+  step_naomit(all_predictors()) |>
+  step_corr(all_numeric_predictors()) |>
+  step_log(wpop, base = exp(1)) |>
+  step_sqrt(wpop_noEU_rel) |>
+  step_normalize(all_numeric_predictors()) |>
+  step_dummy(all_nominal_predictors())
+
+rec |> prep()
+```
+
+```{r}
+# Checking the transformed dataset
+rec |> prep() |> bake(new_data = NULL) |>
+  select(wpop:accidents)  |>
+  pivot_longer(cols = everything()) |>
+  ggplot(aes(x = value)) +
+  geom_density(na.rm = TRUE) +
+  facet_wrap(vars(name), scales = "free")
+```
+
+#### Model creation and fitting
+
+```{r}
+acc_metrics <- metric_set(rmse, mae, rsq)
+
+rf_mod <- rand_forest(trees = 500) |>
+  set_mode("regression") |>
+  set_engine("ranger", importance = "permutation")
+
+rf_mod_fit <- workflow() |>
+  add_recipe(rec) |>
+  add_model(rf_mod) |>
+  fit(acc_train)
+```
+
+#### Performance evaluation
+
+```{r}
+rf_pred <- rf_mod_fit |>
+  predict(acc_test) |>
+  bind_cols(acc_test)
+rf_pred |>
+  acc_metrics(accidents, .pred) |>
+  select(-.estimator)
+```
+
+```{r}
+rf_pred |>
+  ggplot(aes(x = accidents, y = .pred)) +
+  geom_abline(linetype = "dashed", color = "gray80") +
+  geom_point() +
+  labs(x = "Truth",
+       y = "Prediction",
+       title = "Predictions of random forest on test set")
+```
+
+#### Variable importance
+
+```{r}
+rf_mod_fit |>
+  extract_fit_parsnip() |>
+  vip()
+```
+
 ```{r}
 sessionInfo()
+```
+
+```{r}
+
 ```

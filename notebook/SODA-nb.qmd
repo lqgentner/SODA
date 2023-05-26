@@ -1,6 +1,6 @@
 ---
-title: "Spain Occupational Accident Analysis (SODA)"
-subtitle: "Business Analytics Project"
+title: "SODA: Spain Occupational Accident Data Analysis"
+subtitle: "A Project of the UPC ESEIAAT Business Analytics Course"
 author: "Luis Gentner"
 toc: true
 date: today
@@ -13,6 +13,7 @@ editor: visual
 ---
 
 ```{r}
+#| echo: false
 #| message: false
 library(conflicted)
 library(tidyverse)
@@ -35,11 +36,15 @@ theme_set(theme_minimal())
 
 # Introduction
 
-This report covers the analysis of occupational accidents, also known as work accidents, in Spain
+This report covers the analysis of work accidents, also known as occupational accidents, in Spain. The relative amount of work accidents is examined per autonomous community (AC) and per sector. Furthermore, the influence of multiple economic indicators on the accident rate is investigated.
 
 # Data Exploration
 
+The data is obtained from a [database](https://www.mites.gob.es/estadisticas/eat/welcome.htm) of the Spanish Ministry of Labor and Social Security. The index is used is called "ATR-I.1.3", which lists the work accidents per 100.000 workers in a given year, sector and autonomous community. The data is available for the years 2009 to 2021. From 2009 to 2019, the series that was recalculated after the current counting method was used. The data is already cleaned and converted into a long format, which was performed in the file [`atr_data_cleaning.R`](../data/atr_data_cleaning.R).
+
 ## Work accidents per sector
+
+First, we look at the time series of work accidents per sector.
 
 ```{r}
 load("../data/atr_clean.RData")
@@ -54,7 +59,11 @@ atr |>
          title = "Work accidents in Spain from 2009 to 2021")
 ```
 
+Averaged over the years, the accidents in the construction sector are the highest, being about twice over the total across all sectors. The service sector has the lowest number of work accidents. While the work accidents in 2021 are less than in 2009 and were falling sharply between 20019 and 2011, there was a steady rise between 2012 and 2019. In 2019, this trend was reversed, coinciding with the economic recession during the COVID-19 pandemic.
+
 ## Work accidents per autonomous community
+
+Next we can look at the work accidents per AC in the most recent available year:
 
 ```{r}
 atr |>
@@ -67,7 +76,11 @@ atr |>
        title = "Work accidents in 2021 per autonomous community")
 ```
 
+The Balearics, Castilla - La Mancha, and Foral de Navarra have the highest number of accidents per worker, while Catalonia, the Canaries, and Madrid are on the other end of the scale. We try to find possible reasons for this later.
+
 ### Map plot
+
+We can also print the accidents per AC on a Map. This plot is mainly intended for the Shiny app.
 
 ```{r}
 #| warning: false
@@ -114,6 +127,8 @@ ggplot(ccaa_atr) +
 
 ## Annual change rate
 
+We can derive the annual change rate of work accidents from the accident number, by divding the difference from the last year by last year's accident rate:
+
 ```{r}
 atr <- atr |>
   # Annual change rate
@@ -138,6 +153,8 @@ atr |>
        title = "Work accidents in Spain from 2009 to 2021")
 ```
 
+The sharp decline and rise before and after the pandemic is even more apparent here.
+
 ```{r}
 #| echo: false
 # Save data for use in dashboard
@@ -146,9 +163,13 @@ save(atr, file = "../dashboard/atr_joined.RData")
 
 # Comparison with economic data
 
+Next, we find and engineer economic features which might correlate with the work accident rate. All variables are extracted from the [`ESdata`](https://github.com/jmsallan/ESdata) package by Jose M Sallan.
+
 ## Working population
 
 ### Absolute working population
+
+We start by looking at the active working population. This data is available per sector and per AC in all required years.
 
 ```{r}
 wpop <- epa_sector |>
@@ -167,7 +188,7 @@ wpop |>
 
 ### Working population per sector
 
-Plot per autonomous community:
+We can calculate the relative working population per sector from this:
 
 ```{r}
 # Add relative work pop per sector
@@ -175,6 +196,22 @@ wpop <- wpop |>
   mutate(wpop_rel = wpop / wpop[sector == "total"],
          .by = c(periodo, region))
 # Plot
+wpop |>
+  filter(sector != "total",
+         region == "ES") |>
+  ggplot(aes(periodo,  wpop_rel, fill = sector)) +
+  geom_area() +
+  scale_x_date(date_minor_breaks = "years") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(x = "Date", y = "Percentage", fill = "Sector",
+       title = "Relative working population in Spain per sector")
+```
+
+The steady increase in the service sector is apparent.
+
+We can also plot the data per autonomous community:
+
+```{r}
 wpop |>
   # Add full AC names
   left_join(ccaa_iso, by = join_by(region == iso)) |>
@@ -187,20 +224,6 @@ wpop |>
   scale_x_continuous(labels = label_percent()) +
   labs(x = "Percentage", y = NULL,
        title = "Relative working population per sector in 2023")
-```
-
-Plot time trend:
-
-```{r}
-wpop |>
-  filter(sector != "total",
-         region == "ES") |>
-  ggplot(aes(periodo,  wpop_rel, fill = sector)) +
-  geom_area() +
-  scale_x_date(date_minor_breaks = "years") +
-  scale_y_continuous(labels = label_percent()) +
-  labs(x = "Date", y = "Percentage", fill = "Sector",
-       title = "Relative working population in Spain per sector")
 ```
 
 ### Non-EU-working population
@@ -343,14 +366,24 @@ str(joined)
 
 Scaling the outcome variable (not possible within recipe):
 
+)
+
 ```{r}
+set.seed(3141)
 joined <- joined |>
   # Scaling the outcome variable
-  mutate(accidents = log(accidents, base = 10))
+  mutate(accidents = log(accidents, base = 10)) |>
+  ## Prepare for later time split:
+  # Shuffle rows
+  slice_sample(prop = 1) |>
+  # Sort after time
+  arrange(year)
+
+joined |> head()
 ```
 
 ```{r}
-acc_split <- initial_split(joined, prop = 0.8)
+acc_split <- initial_time_split(joined, prop = 0.8)
 acc_train <- training(acc_split)
 acc_test <- testing(acc_split)
 
@@ -368,11 +401,12 @@ rec |> prep()
 ```{r}
 # Checking the transformed dataset
 rec |> prep() |> bake(new_data = NULL) |>
-  select(wpop:accidents)  |>
+  select(year:accidents)  |>
   pivot_longer(cols = everything()) |>
   ggplot(aes(x = value)) +
   geom_density(na.rm = TRUE) +
-  facet_wrap(vars(name), scales = "free")
+  facet_wrap(vars(name), scales = "free") +
+  labs(title = "Desnity estimate of the predictor and outcome variables")
 ```
 
 #### Model creation and fitting
@@ -384,6 +418,7 @@ rf_mod <- rand_forest(trees = 500) |>
   set_mode("regression") |>
   set_engine("ranger", importance = "permutation")
 
+set.seed(3141)
 rf_mod_fit <- workflow() |>
   add_recipe(rec) |>
   add_model(rf_mod) |>
@@ -421,8 +456,4 @@ rf_mod_fit |>
 
 ```{r}
 sessionInfo()
-```
-
-```{r}
-
 ```

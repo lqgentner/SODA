@@ -26,7 +26,7 @@ renamed_ccaa = c(
 sector_trans = tribble(
   ~sector_en, ~sector,
   "Total", "total",
-  "Agriculture", "agrario",
+  "Agriculture", "agricultura",
   "Industry", "industria",
   "Construction", "construccion",
   "Services", "servicios"

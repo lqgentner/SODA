@@ -61,7 +61,7 @@ atr |>
 
 Averaged over the years, the accidents in the construction sector are the highest, being about twice over the total across all sectors. The service sector has the lowest number of work accidents. While the work accidents in 2021 are less than in 2009 and were falling sharply between 20019 and 2011, there was a steady rise between 2012 and 2019. In 2019, this trend was reversed, coinciding with the economic recession during the COVID-19 pandemic.
 
-## Work accidents per autonomous community
+## Work accidents per autonomous community {#sec-acc-ccaa}
 
 Next we can look at the work accidents per AC in the most recent available year:
 
@@ -127,7 +127,7 @@ ggplot(ccaa_atr) +
 
 ## Annual change rate
 
-We can derive the annual change rate of work accidents from the accident number, by divding the difference from the last year by last year's accident rate:
+We can derive the annual change rate of work accidents from the accident number, by dividing the difference between current and last year by last year's accident rate:
 
 ```{r}
 atr <- atr |>
@@ -163,7 +163,7 @@ save(atr, file = "../dashboard/atr_joined.RData")
 
 # Comparison with economic data
 
-Next, we find and engineer economic features which might correlate with the work accident rate. All variables are extracted from the [`ESdata`](https://github.com/jmsallan/ESdata) package by Jose M Sallan.
+Next, we find economic features and engineer new ones which might correlate with the work accident rate. All variables are extracted from the [`ESdata`](https://github.com/jmsallan/ESdata) package by Jose M Sallan.
 
 ## Working population
 
@@ -183,7 +183,7 @@ wpop |>
   geom_line() +
   scale_x_date(date_minor_breaks = "years") +
   labs(x = "Year", y = "100k workers", color = "Sector",
-       title = "Active working population in Spain")
+       title = "Active working population")
 ```
 
 ### Working population per sector
@@ -204,7 +204,7 @@ wpop |>
   scale_x_date(date_minor_breaks = "years") +
   scale_y_continuous(labels = label_percent()) +
   labs(x = "Date", y = "Percentage", fill = "Sector",
-       title = "Relative working population in Spain per sector")
+       title = "Relative active working population per sector")
 ```
 
 The steady increase in the service sector is apparent.
@@ -223,10 +223,14 @@ wpop |>
   geom_col() +
   scale_x_continuous(labels = label_percent()) +
   labs(x = "Percentage", y = NULL,
-       title = "Relative working population per sector in 2023")
+       title = "Relative active working population per sector in 2023")
 ```
 
+Here you can see that the communities which had a high number of work accidents @sec-acc-ccaa also have a higher percentage of jobs in the construction, agricultural, or industrial sectors.
+
 ### Non-EU-working population
+
+Next, we engineer a feature which indicates the share of workers of non-EU countries in relation to the total working population. This data is available per sector, but not per AC.
 
 ```{r}
 wpop_noEU <- epa_nac |>
@@ -241,12 +245,7 @@ wpop_noEU <- epa_nac |>
   filter(nac == "no-UE") |>
   select(-valor, -nac)
 
-wpop_noEU |> head()
-```
-
-Plot non-EU workforce per AC:
-
-```{r}
+# Plot
 wpop_noEU |>
   filter(periodo == "2023-01-31") |>
   # Add full AC names
@@ -260,7 +259,11 @@ wpop_noEU |>
        title = "Non-EU working population in 2023")
 ```
 
+We have to rely on the deeper analysis in the next chapter to so if this variable has an influence on the amount of work accidents.
+
 ## GDP
+
+Next we look at the economic performance of Spain. We use the GDP calculated by the value-added approach, as this index is made out of sub-indices for every economic sector. We can therefore compare the work accidents and GDP for every sector.
 
 ```{r}
 agr = c("vab_A", "vab_BE", "vab_F", "vab_GT", "pib")
@@ -291,7 +294,7 @@ gdp |>
 
 ### Correlation analysis
 
-To chose with which GDP value to go forward, I analyze the correlations between the accidents and GDP values. I only consider the whole country and the accidents over all sectors.
+For the GDP calculated by the added value-approach, I chose to go for the seasonality adjusted data. Because it is unclear if the indexed or non-indexed values and the base values or annual change rate correlates best with the work accident data, I analyze the correlations between them. I only consider the whole country and the accidents over all sectors.
 
 ```{r}
 #| message: false
@@ -307,7 +310,7 @@ atr |>
   focus(accidents, acc_yoy)
 ```
 
-The indexed values show a higher correlation than the actual values. We choose keep both the base and annual variations of the indexed GDP.
+The indexed values show a higher correlation than the non-indexed values. I choose to keep both the absolute values and year over year change of the indexed GDP.
 
 ```{r}
 gdp <- gdp |>
@@ -317,6 +320,8 @@ gdp <- gdp |>
 ```
 
 ## Inflation rate and consumer price index
+
+Lastly, we collect the historic inflation rates in Spain. Similar to the GDP, I extract both the absolute values (in this case called the consumer price index) and year over year change.
 
 ```{r}
 infl <- ipc_ccaa |>
@@ -341,9 +346,22 @@ infl |>
 
 ## Analysis of the influence of economic data using machine learning
 
-#### Dataset joing
+#### Dataset joining
 
-To DO GDP: Merging agregado with sectors...
+The following table gives a summary about all available data which we will use in the analysis and its availability per sector and per AC:
+
+| Description                           | Name            | Per AC | Per sector |
+|----------------------|-----------------|-----------------|-----------------|
+| Work accidents                        | `accidents`     | ✓      | ✓          |
+| Working population                    | `wpop`          | ✓      | ✓          |
+| Share of working population in sector | `wpop_rel`      | ✓      | ✓          |
+| Share of non-EU workers               | `wpop_noEU_rel` | ✓      |            |
+| Indexed GDP                           | `gdp_idx`       |        | ✓          |
+| Indexed GDP, YoY change rate          | `gdp_idx_yoy`   |        | ✓          |
+| Inflation, consumer price index       | `infl_cpi`      |        |            |
+| Inflation, YoY change rate            | `infl_yoy`      |        |            |
+
+We will join the datasets in such a way that for every data point, only the corresponding data of that sector and that autonomous community is available to the model. If for a given dataset the sector or AC level is not available, the total will be shown to the model.
 
 ```{r}
 joined <- atr |>
@@ -364,9 +382,7 @@ str(joined)
 
 #### Recipe creation
 
-Scaling the outcome variable (not possible within recipe):
-
-)
+We scale the outcome variable, which is not possible in the recipe. Because we will use the `initial_time_split` to split the data in train and test sets, which does not shuffle the samples, we shuffle the dataset within each year first.
 
 ```{r}
 set.seed(3141)
@@ -375,12 +391,14 @@ joined <- joined |>
   mutate(accidents = log(accidents, base = 10)) |>
   ## Prepare for later time split:
   # Shuffle rows
-  slice_sample(prop = 1) |>
+  slice_sample(prop = 1, by = year)
   # Sort after time
-  arrange(year)
+  # arrange(year)
 
 joined |> head()
 ```
+
+For training a model on time series data, it is important that the testing samples lie after the training samples, so the model cannot peek "into the future" during training.
 
 ```{r}
 acc_split <- initial_time_split(joined, prop = 0.8)
@@ -411,6 +429,8 @@ rec |> prep() |> bake(new_data = NULL) |>
 
 #### Model creation and fitting
 
+We train a random forest model.
+
 ```{r}
 acc_metrics <- metric_set(rmse, mae, rsq)
 
@@ -426,6 +446,8 @@ rf_mod_fit <- workflow() |>
 ```
 
 #### Performance evaluation
+
+Although we are more interested in the variable importance, we take a quick look at the prediction accuracy on the test set which looks decent.
 
 ```{r}
 rf_pred <- rf_mod_fit |>
@@ -451,8 +473,19 @@ rf_pred |>
 ```{r}
 rf_mod_fit |>
   extract_fit_parsnip() |>
-  vip()
+  vip(num_features = 12) +
+  labs(title = "Most important features in random forest model")
 ```
+
+The three most important features are the relative working population in the sector, and the two dummies of the construction and service sectors. The three features stand out, because their importance scores are by far higher than the ones which follow. It is interesting that the relative working population in a sector correlates so strong with the relative accident number, as the latter is in itself adjusted to the amount of people who work in that sector and AC. The importance of the two dummies is likely due to the considerably higher and lower accident number in the construction and service sectors respectivly.
+
+Of all economic features, the indexed GDP of the given sector has the biggest influence on the outcome. The consumer price index has less influence.
+
+Only one AC dummy made it into the top-12, which is the one of the Balearics. The reason might be that the accident number on these islands differs a lot from the numbers in all other communities, so the model has to take this dummy into account.
+
+# Summary
+
+In this report we analysed the work accident numbers in Spain. We created multiple plots to compare the accident rates between years, sectors, and autonomous communities. We joined multiple economic indicators with our dataset and trained a random forest model to identify the most important one, which was the indexed value-added GDP per economic sector.
 
 ```{r}
 sessionInfo()

@@ -49,7 +49,7 @@ atr <- atr |>
          .by = c(sector, ccaa))
 ```
 
-![](../notebook/figures/accyoy-year-1.png){height="700"}
+![](../notebook/figures/accyoy-year-1.png){height="490"}
 
 ## Shiny app
 
@@ -89,22 +89,21 @@ All indices were directly extracted or derived from [`ESdata`](https://github.co
 
 ## Selected plots: Relative working population
 
-::: {layout-ncol=2}
-
-![](../notebook/figures/wpoprel-year-1.png)
-
-![](../notebook/figures/wpoprel-ccaa-1.png)
-:::
-
 ```r
 wpop <- wpop |>
   mutate(wpop_rel = wpop / wpop[sector == "total"],
          .by = c(periodo, region))
 ```
 
-## Selected plots: GDP
+::: {layout-ncol=2}
+![](../notebook/figures/wpoprel-year-1.png)
 
-![](../notebook/figures/gdp-year-1.png){height="520"}
+![](../notebook/figures/wpoprel-ccaa-1.png)
+:::
+
+## Selected plots: GDP {.smaller}
+
+![](../notebook/figures/gdp-year-1.png){height="400"}
 
 - Used adjusted value-added GDP (`pib_pm_oferta`)
 - Available per economic sector

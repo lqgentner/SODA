@@ -65,7 +65,7 @@ ccaa_picker <- selectInput(
   "ccaa_select",
   label = "Select autonomous community:",
   choices = atr$ccaa_name |> levels(),
-  selected = 2
+  selected = "Comunidad de Madrid"
 )
 
 # Defining the Year picker
@@ -106,7 +106,7 @@ map_plot <- card(
   card_header("Number of work accidents"),
   layout_sidebar(
     sidebar = map_sidebar,
-    card_body(class = "p-0", plotOutput("map_plot"))
+    plotOutput("map_plot")
   )
 )
 
@@ -148,13 +148,15 @@ ui <- page_navbar(
 server <- function(input, output) {
   # Map plot
   output$map_plot <- renderPlot({
+    # Filter accident data according to selection
     atr_filtered <- atr |>
       filter(year == input$year_select,
-             ccaa != "ES",
              sector_en == input$sector_select) |>
       mutate(ccaa = as.character(ccaa))
+    # Merge SF with accidents
     ccaa_atr <- ccaa |>
       inner_join(atr_filtered, by = join_by(iso2.ccaa.code == ccaa))
+    # SF of selected AC (empty if ccaa_name == España)
     ccaa_atr_select <- ccaa_atr |> filter(ccaa_name == input$ccaa_select)
     ggplot() +
       # Plot AC and fill according to accident rate
@@ -176,10 +178,13 @@ server <- function(input, output) {
         aes(label = paste0(input$ccaa_select, ":\n", round(accidents)),
             geometry = geometry),
         stat = "sf_coordinates",
-        fill = alpha(c("white"), 0.5),
+        fill = alpha(c("white"), 0.8),
         color = "black",
         size = 3,
-        label.size = 0
+        # label.size = 0,
+        nudge_x = 1.5,
+        nudge_y = 1,
+        min.segment.length = 0
       ) +
       scale_fill_gradient(high = color_lu[[input$sector_select]],
                           low = "white") +

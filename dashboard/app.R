@@ -20,6 +20,7 @@ library(scales)
 library(sf)
 library(mapSpain)
 library(ggrepel)
+library(ggfx)
 
 conflicts_prefer(
   dplyr::filter(),
@@ -64,7 +65,7 @@ ccaa_picker <- selectInput(
   "ccaa_select",
   label = "Select autonomous community:",
   choices = atr$ccaa_name |> levels(),
-  selected = 1
+  selected = 2
 )
 
 # Defining the Year picker
@@ -83,43 +84,43 @@ sector_picker <- selectInput(
   selected = 1
 )
 
-# Defining the conditional sidebar
-cond_sidebar <- sidebar(
-  conditionalPanel(
-    "input.nav === 'Regional Analysis'",
-    ccaa_picker
+# Defining the sidebars
+page_sidebar <- sidebar(ccaa_picker)
+map_sidebar <- sidebar(year_picker, sector_picker, position = "right")
+
+# Defining the layout of the two accident plots side-by-side
+acc_plots <- layout_column_wrap(
+  width = "400px",
+  height = "300px",
+  card(card_header("Number of work accidents"),
+       card_body(plotOutput("atr_plot"))
   ),
-  conditionalPanel(
-    "input.nav === 'Overview Map'",
-    year_picker,
-    sector_picker,
+  card(card_header("Annual change of work accidents"),
+       card_body(plotOutput("atr_yoy_plot"))
   )
 )
 
-# Defining the Analysis page
-analysis_view <- page_fillable(
+# Defining the map plot
+map_plot <- card(
+  full_screen = TRUE,
+  card_header("Number of work accidents"),
+  layout_sidebar(
+    sidebar = map_sidebar,
+    card_body(class = "p-0", plotOutput("map_plot"))
+  )
+)
+
+# Defining the page
+page_view <- page_fillable(
   h2("Work accidents in Spain after autonomous community"),
   uiOutput("boxes"),
   p(),
   layout_column_wrap(
-    width = "400px",
-    height = "600px",
-    card(card_header("Number of work accidents"),
-      card_body(plotOutput("atr_plot"))
-    ),
-    card(card_header("Annual change of work accidents"),
-      card_body(plotOutput("atr_yoy_plot"))
-    )
+    width = "600px",
+    acc_plots,
+    map_plot
   )
-)
-
-# Defining the Map page
-map_view <- page_fillable(
-  h2("Work accidents in Spain after sector and year"),
-  card(full_screen = TRUE, height = "600px",
-    card_header("Number of work accidents"),
-    card_body(class = "p-0", plotOutput("map_plot"))
-  )
+  
 )
 
 # Defining the footer
@@ -134,14 +135,12 @@ foot <- page_fillable(
 
 ui <- page_navbar(
     title = "SODA Dashboard",
-    id = "nav",
     fillable = "Dashboard",
     theme = soda_theme,
     inverse = FALSE,
-    sidebar = cond_sidebar,
+    sidebar = page_sidebar,
     footer = foot,
-    nav_panel("Regional Analysis", analysis_view),
-    nav_panel("Overview Map", map_view),
+    nav_panel("Regional analysis", page_view)
   )
 
 
@@ -156,13 +155,26 @@ server <- function(input, output) {
       mutate(ccaa = as.character(ccaa))
     ccaa_atr <- ccaa |>
       inner_join(atr_filtered, by = join_by(iso2.ccaa.code == ccaa))
-    ggplot(ccaa_atr) +
-      geom_sf(aes(fill = accidents),
+    ccaa_atr_select <- ccaa_atr |> filter(ccaa_name == input$ccaa_select)
+    ggplot() +
+      # Plot AC and fill according to accident rate
+      geom_sf(data = ccaa_atr,
+              aes(fill = accidents),
               color = "grey70",
               linewidth = .3) +
+      # Highlight selected AC
+      with_outer_glow(
+        expand = 1,
+        geom_sf(data = ccaa_atr_select,
+                aes(fill = accidents))
+      ) +
+      # Plot Canaries box
       geom_sf(data = can_box, color = "grey70") +
+      # Plot label
       geom_label_repel(
-        aes(label = round(accidents), geometry = geometry),
+        data = ccaa_atr_select,
+        aes(label = paste0(input$ccaa_select, ":\n", round(accidents)),
+            geometry = geometry),
         stat = "sf_coordinates",
         fill = alpha(c("white"), 0.5),
         color = "black",
@@ -171,7 +183,6 @@ server <- function(input, output) {
       ) +
       scale_fill_gradient(high = color_lu[[input$sector_select]],
                           low = "white") +
-      # theme_void() +
       theme(legend.position = c(0.12, 0.6)) +
       labs(x = NULL,
            y = NULL,

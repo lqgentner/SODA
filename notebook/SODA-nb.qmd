@@ -9,10 +9,13 @@ format:
     embed-resources: true
     df-print: "paged"
     toc: true
+knitr:
+  opts_chunk:
+    fig.path: figures/
 editor: visual
 ---
 
-```{r}
+```{r setup}
 #| echo: false
 #| message: false
 library(conflicted)
@@ -40,13 +43,13 @@ This report covers the analysis of work accidents, also known as occupational ac
 
 # Data Exploration
 
-The data is obtained from a [database](https://www.mites.gob.es/estadisticas/eat/welcome.htm) of the Spanish Ministry of Labor and Social Security. The index is used is called "ATR-I.1.3", which lists the work accidents per 100.000 workers in a given year, sector and autonomous community. The data is available for the years 2009 to 2021. From 2009 to 2019, the series that was recalculated after the current counting method was used. The data is already cleaned and converted into a long format, which was performed in the file [`atr_data_cleaning.R`](../data/atr_data_cleaning.R).
+The data is obtained from a [database](https://www.mites.gob.es/estadisticas/eat/welcome.htm) of the Spanish Ministry of Labor and Social Economy. The index is used is called "ATR-I.1.3", which lists the work accidents per 100.000 workers in a given year, sector and autonomous community. The data is available for the years 2009 to 2021. From 2009 to 2019, the series that was recalculated after the current counting method was used. The data is already cleaned and converted into a long format, which was performed in the file [`atr_data_cleaning.R`](../data/atr_data_cleaning.R).
 
 ## Work accidents per sector
 
 First, we look at the time series of work accidents per sector.
 
-```{r}
+```{r acc-year}
 load("../data/atr_clean.RData")
 atr |>
   filter(ccaa == "ES") |>
@@ -65,7 +68,7 @@ Averaged over the years, the accidents in the construction sector are the highes
 
 Next we can look at the work accidents per AC in the most recent available year:
 
-```{r}
+```{r acc-ccaa}
 atr |>
   filter(sector == "total",
          year == 2021) |>
@@ -82,7 +85,7 @@ The Balearics, Castilla - La Mancha, and Foral de Navarra have the highest numbe
 
 We can also print the accidents per AC on a Map. This plot is mainly intended for the Shiny app.
 
-```{r}
+```{r acc-map}
 #| warning: false
 
 # Get Spanish ACs as simple features
@@ -129,7 +132,7 @@ ggplot(ccaa_atr) +
 
 We can derive the annual change rate of work accidents from the accident number, by dividing the difference between current and last year by last year's accident rate:
 
-```{r}
+```{r accyoy}
 atr <- atr |>
   # Annual change rate
   mutate(acc_yoy = (accidents - lag(accidents)) / lag(accidents),
@@ -138,7 +141,7 @@ atr <- atr |>
   mutate(year = year(date))
 ```
 
-```{r}
+```{r accyoy-year}
 atr |>
   filter(ccaa == "ES") |>
   drop_na() |>
@@ -155,7 +158,7 @@ atr |>
 
 The sharp decline and rise before and after the pandemic is even more apparent here.
 
-```{r}
+```{r export-atr}
 #| echo: false
 # Save data for use in dashboard
 save(atr, file = "../dashboard/atr_joined.RData")
@@ -171,7 +174,7 @@ Next, we find economic features and engineer new ones which might correlate with
 
 We start by looking at the active working population. This data is available per sector and per AC in all required years.
 
-```{r}
+```{r wpop-year}
 wpop <- epa_sector |>
   filter(edad == "total",
          sexo == "total") |>
@@ -190,7 +193,7 @@ wpop |>
 
 We can calculate the relative working population per sector from this:
 
-```{r}
+```{r wpoprel-year}
 # Add relative work pop per sector
 wpop <- wpop |>
   mutate(wpop_rel = wpop / wpop[sector == "total"],
@@ -211,7 +214,7 @@ The steady increase in the service sector is apparent.
 
 We can also plot the data per autonomous community:
 
-```{r}
+```{r wpoprel-ccaa}
 wpop |>
   # Add full AC names
   left_join(ccaa_iso, by = join_by(region == iso)) |>
@@ -222,7 +225,7 @@ wpop |>
              fill = sector)) +
   geom_col() +
   scale_x_continuous(labels = label_percent()) +
-  labs(x = "Percentage", y = NULL,
+  labs(x = "Percentage", y = NULL, fill = "Sector",
        title = "Relative active working population per sector in 2023")
 ```
 
@@ -232,7 +235,7 @@ Here you can see that the communities which had a high number of work accidents 
 
 Next, we engineer a feature which indicates the share of workers of non-EU countries in relation to the total working population. This data is available per sector, but not per AC.
 
-```{r}
+```{r wpopnoeu-ccaa}
 wpop_noEU <- epa_nac |>
   # Only view all sexes and working population
   filter(sexo == "total",
@@ -265,7 +268,7 @@ We have to rely on the deeper analysis in the next chapter to so if this variabl
 
 Next we look at the economic performance of Spain. We use the GDP calculated by the value-added approach, as this index is made out of sub-indices for every economic sector. We can therefore compare the work accidents and GDP for every sector.
 
-```{r}
+```{r gdp-year}
 agr = c("vab_A", "vab_BE", "vab_F", "vab_GT", "pib")
 agr_rename = c(
   "agricultura" = "vab_A",
@@ -287,7 +290,7 @@ gdp <- pib_pm_oferta |>
 gdp |>
   ggplot(aes(periodo, indice_base, color = agregado)) +
   geom_line() +
-  labs(x = "Year", y = "Indexed GDP",
+  labs(x = "Year", y = "Indexed GDP", color = "Partition",
        title = "Gross domestic product of Spain")
 
 ```
@@ -296,7 +299,7 @@ gdp |>
 
 For the GDP calculated by the added value-approach, I chose to go for the seasonality adjusted data. Because it is unclear if the indexed or non-indexed values and the base values or annual change rate correlates best with the work accident data, I analyze the correlations between them. I only consider the whole country and the accidents over all sectors.
 
-```{r}
+```{r gdp-corr}
 #| message: false
 
 # Join GDP and accident data
@@ -312,7 +315,7 @@ atr |>
 
 The indexed values show a higher correlation than the non-indexed values. I choose to keep both the absolute values and year over year change of the indexed GDP.
 
-```{r}
+```{r gdp-select}
 gdp <- gdp |>
   select(-starts_with("valor")) |>
   rename(gdp_idx = indice_base,
@@ -323,7 +326,7 @@ gdp <- gdp |>
 
 Lastly, we collect the historic inflation rates in Spain. Similar to the GDP, I extract both the absolute values (in this case called the consumer price index) and year over year change.
 
-```{r}
+```{r infl}
 infl <- ipc_ccaa |>
   # Only extract annual inflation and price index over all groups
   filter(grupo == "general",
@@ -351,7 +354,7 @@ infl |>
 The following table gives a summary about all available data which we will use in the analysis and its availability per sector and per AC:
 
 | Description                           | Name            | Per AC | Per sector |
-|----------------------|-----------------|-----------------|-----------------|
+|---------------------------------------|-----------------|-------:|-----------:|
 | Work accidents                        | `accidents`     | ✓      | ✓          |
 | Working population                    | `wpop`          | ✓      | ✓          |
 | Share of working population in sector | `wpop_rel`      | ✓      | ✓          |
@@ -363,7 +366,7 @@ The following table gives a summary about all available data which we will use i
 
 We will join the datasets in such a way that for every data point, only the corresponding data of that sector and that autonomous community is available to the model. If for a given dataset the sector or AC level is not available, the total will be shown to the model.
 
-```{r}
+```{r data-join}
 joined <- atr |>
   # Removing missing values
   drop_na() |>
@@ -384,7 +387,7 @@ str(joined)
 
 We scale the outcome variable, which is not possible in the recipe. Because we will use the `initial_time_split` to split the data in train and test sets, which does not shuffle the samples, we shuffle the dataset within each year first.
 
-```{r}
+```{r shuffling}
 set.seed(3141)
 joined <- joined |>
   # Scaling the outcome variable
@@ -400,7 +403,7 @@ joined |> head()
 
 For training a model on time series data, it is important that the testing samples lie after the training samples, so the model cannot peek "into the future" during training.
 
-```{r}
+```{r recipe}
 acc_split <- initial_time_split(joined, prop = 0.8)
 acc_train <- training(acc_split)
 acc_test <- testing(acc_split)
@@ -416,7 +419,7 @@ rec <- recipe(accidents ~ ., data = acc_split) |>
 rec |> prep()
 ```
 
-```{r}
+```{r baked-data}
 # Checking the transformed dataset
 rec |> prep() |> bake(new_data = NULL) |>
   select(year:accidents)  |>
@@ -431,7 +434,7 @@ rec |> prep() |> bake(new_data = NULL) |>
 
 We train a random forest model.
 
-```{r}
+```{r training}
 acc_metrics <- metric_set(rmse, mae, rsq)
 
 rf_mod <- rand_forest(trees = 500) |>
@@ -449,7 +452,7 @@ rf_mod_fit <- workflow() |>
 
 Although we are more interested in the variable importance, we take a quick look at the prediction accuracy on the test set which looks decent.
 
-```{r}
+```{r predict}
 rf_pred <- rf_mod_fit |>
   predict(acc_test) |>
   bind_cols(acc_test)
@@ -458,7 +461,7 @@ rf_pred |>
   select(-.estimator)
 ```
 
-```{r}
+```{r pred-plot}
 rf_pred |>
   ggplot(aes(x = accidents, y = .pred)) +
   geom_abline(linetype = "dashed", color = "gray80") +
@@ -470,7 +473,7 @@ rf_pred |>
 
 #### Variable importance
 
-```{r}
+```{r varimp}
 rf_mod_fit |>
   extract_fit_parsnip() |>
   vip(num_features = 12) +
@@ -487,6 +490,6 @@ Only one AC dummy made it into the top-12, which is the one of the Balearics. Th
 
 In this report we analysed the work accident numbers in Spain. We created multiple plots to compare the accident rates between years, sectors, and autonomous communities. We joined multiple economic indicators with our dataset and trained a random forest model to identify the most important one, which was the indexed value-added GDP per economic sector.
 
-```{r}
+```{r sessioninfo}
 sessionInfo()
 ```

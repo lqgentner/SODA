@@ -1,0 +1,132 @@
+---
+title: SODA
+subtitle: Spanish Occupational Accidents Data Analysis
+author:
+  - name: Luis Gentner
+    email: luis.quentin.gentner@estudiantat.upc.edu
+    affiliations: UPC ESEIAAT
+date: last-modified
+format:
+  revealjs:
+    embed-resources: true
+    slide-number: true
+    preview-links: auto
+    logo: images/upc-logo.png
+    footer: Luis Gentner | SODA | UPC ESEIAAT | Business Analytics 2023
+---
+
+## Outline
+
+- Introduction
+- Exploration of the work accident dataset
+- Shiny app showcase
+- Gathering of economic data
+- Analyzing the relation of accidents and economic indicators
+
+## Introduction
+
+# Work Accident Dataset {background-color="#007abf"}
+
+## Used data
+
+- Dataset from the Spanish [Ministry of Labour and Social Economy](https://www.mites.gob.es/estadisticas/eat/welcome.htm)
+- Used Indicator: ATR-I-1.3, indicates the work accident number per 100,000 workers for a given year
+  - By autonomous community (AC) and by economic sector
+  - Data from 2009 to 2021
+  - Recalculated data for years 2009 to 2019
+
+
+## Work accidents per year and sector
+
+![](../notebook/figures/acc-year-1.png)
+
+## Work Accidents per AC
+
+![](../notebook/figures/acc-map-1.png)
+
+## Deriving the annual change rate
+
+```r
+atr <- atr |>
+  mutate(acc_yoy = (accidents - lag(accidents)) / lag(accidents),
+         .by = c(sector, ccaa))
+```
+
+![](../notebook/figures/accyoy-year-1.png){height="700"}
+
+## Shiny app
+
+::: columns
+
+::: {.column width="75%"}
+- Interactive dashboard to show current trends, regional analysis and map
+- Used packages:
+  - [`{bslib}`](https://rstudio.github.io/bslib/): Modern UI components for Shiny, replaces shinydashboard
+  - [`{thematic}`](https://rstudio.github.io/thematic/): ggplot2 auto-theming
+:::
+
+::: {.column width="25%"}
+![](images/shiny_qrcode.png)
+:::
+
+:::
+
+- Try yourself: [luisgentner.shinyapps.io/SODA](https://luisgentner.shinyapps.io/SODA/)
+
+# Comparison with Economic Data {background-color="#007abf"}
+
+## Gathered economic data
+
+
+| Description                           | Per AC | Per sector |
+|---------------------------------------|-------:|-----------:|
+| Working population                    | ✓      | ✓          |
+| Working population of sector, share   | ✓      | ✓          |
+| Non-EU workers, share                 | ✓      |            |
+| Indexed GDP                           |        | ✓          |
+| Indexed GDP, YoY change rate          |        | ✓          |
+| Inflation, consumer price index       |        |            |
+| Inflation, YoY change rate            |        |            |
+
+All indices were directly extracted or derived from [`ESdata`](https://github.com/jmsallan/ESdata).
+
+## Selected plots: Relative working population
+
+::: {layout-ncol=2}
+
+![](../notebook/figures/wpoprel-year-1.png)
+
+![](../notebook/figures/wpoprel-ccaa-1.png)
+:::
+
+```r
+wpop <- wpop |>
+  mutate(wpop_rel = wpop / wpop[sector == "total"],
+         .by = c(periodo, region))
+```
+
+## Selected plots: GDP
+
+![](../notebook/figures/gdp-year-1.png){height="520"}
+
+- Used adjusted value-added GDP (`pib_pm_oferta`)
+- Available per economic sector
+- Indexed values showed higher correlation with accidents than base values
+
+## Relation analysis with random forest
+
+- Desired outcome: Variable importance of random forest
+- Joined economic indices with accidents by sector and AC
+  - For given data point of sector and AC, only economic data of this sector and/or AC is shown to the model
+- Dummy encoding for AC and sector
+- Used `initial_time_split` for train/test set splitting so the model can't look into the future
+
+## Model predictions
+
+- Good prediction accuracy on test period
+
+![](../notebook/figures/pred-plot-1.png)
+
+## Variable importance
+
+![](../notebook/figures/varimp-1.png)

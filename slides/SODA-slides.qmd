@@ -17,13 +17,10 @@ format:
 
 ## Outline
 
-- Introduction
 - Exploration of the work accident dataset
 - Shiny app showcase
 - Gathering of economic data
 - Analyzing the relation of accidents and economic indicators
-
-## Introduction
 
 # Work Accident Dataset {background-color="#007abf"}
 
@@ -33,14 +30,14 @@ format:
 - Used Indicator: ATR-I-1.3, indicates the work accident number per 100,000 workers for a given year
   - By autonomous community (AC) and by economic sector
   - Data from 2009 to 2021
-  - Recalculated data for years 2009 to 2019
+  - Took recalculated data for years 2009 to 2019
 
 
 ## Work accidents per year and sector
 
 ![](../notebook/figures/acc-year-1.png)
 
-## Work Accidents per AC
+## Work accidents per AC
 
 ![](../notebook/figures/acc-map-1.png)
 
@@ -113,12 +110,13 @@ wpop <- wpop |>
 - Available per economic sector
 - Indexed values showed higher correlation with accidents than base values
 
-## Relation analysis with random forest
+## Relation analysis with ML
 
-- Desired outcome: Variable importance of random forest
+- Correlation analysis difficult due to groups
+- Analyzing the variable importance of a random forest model instead
 - Joined economic indices with accidents by sector and AC
   - For given data point of sector and AC, only economic data of this sector and/or AC is shown to the model
-- Dummy encoding for AC and sector
+- Dummy encoding of AC and sector
 - Used `initial_time_split` for train/test set splitting so the model can't look into the future
 
 ## Model predictions
@@ -130,3 +128,17 @@ wpop <- wpop |>
 ## Variable importance
 
 ![](../notebook/figures/varimp-1.png)
+
+## Relation analysis outcomes
+
+- Three most important features:
+  - Relative working population in sector
+  - Construction sector dummy
+  - Service sector dummy
+- GDP is more important than inflation (CPI)
+- Work accidents on the Balearics are unlike other AC
+
+## Thank you!
+
+- GitHub: [github.com/lqgentner/SODA](https://github.com/lqgentner/SODA)
+- Shiny app: [luisgentner.shinyapps.io/SODA](https://luisgentner.shinyapps.io/SODA/)

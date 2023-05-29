@@ -21,6 +21,11 @@ library(sf)
 library(mapSpain)
 library(ggrepel)
 
+conflicts_prefer(
+  dplyr::filter(),
+  dplyr::select()
+)
+
 # Get ATR data
 load("atr_joined.RData")
 

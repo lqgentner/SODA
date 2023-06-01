@@ -32,17 +32,13 @@ sector_trans = tribble(
   "Services", "servicios"
 ) |> mutate(across(everything(), as_factor))
 
-# Name and ISO label of autonomous communities
-ccaa_iso <- ccaa_iso |>
-  mutate(across(everything(), as_factor))
-
 atr <- atr |>
   # Factorize
   mutate(across(c(sector, region), as_factor)) |>
   # Drop autonomous cities
   filter(region != "Ceuta y Melilla") |>
   # Rename regions
-  mutate(region = fct_recode(region,!!!renamed_ccaa)) |>
+  mutate(region = fct_recode(region, !!!renamed_ccaa)) |>
   # Add English sector names
   full_join(sector_trans, by = "sector") |>
   # Join with ISO names
@@ -63,7 +59,9 @@ atr <- atr |>
   relocate(sector,
            ccaa,
            date,
-           accidents)
+           accidents) |>
+  # Drop empty factors
+  mutate(across(starts_with("ccaa"), fct_drop))
 
 # Save
 save(atr, file = "../data/atr_clean.RData")

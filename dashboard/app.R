@@ -94,6 +94,47 @@ sector_picker <- selectInput(
 main_sidebar <- sidebar(ccaa_picker)
 map_sidebar <- sidebar(year_picker, sector_picker, position = "right")
 
+# Defining the value boxes
+description <- p("Annual change from last year")
+vboxes <- layout_column_wrap(
+    width = "220px",
+    value_box(
+      title = "Total",
+      class = class_lu[["Total"]],
+      value = textOutput("vbox_Total"),
+      showcase = fa("chart-line", height = "50px"),
+      description
+    ),
+    value_box(
+      title = "Agriculture",
+      class = class_lu[["Agriculture"]],
+      value = textOutput("vbox_Agriculture"),
+      showcase = fa("wheat-awn", height = "50px"),
+      description
+    ),
+    value_box(
+      title = "Industry",
+      class = class_lu[["Industry"]],
+      value = textOutput("vbox_Industry"),
+      showcase = fa("screwdriver-wrench", height = "50px"),
+      description
+    ),
+    value_box(
+      title = "Construction",
+      class = class_lu[["Construction"]],
+      value = textOutput("vbox_Construction"),
+      showcase = fa("helmet-safety", height = "50px"),
+      description
+    ),
+    value_box(
+      title = "Services",
+      class = class_lu[["Services"]],
+      value = textOutput("vbox_Services"),
+      showcase = fa("store", height = "50px"),
+      description
+    )
+  )
+
 # Defining the cards
 cards <- list(
   card(
@@ -133,7 +174,7 @@ ui <- page_sidebar(
     sidebar = main_sidebar,
     theme = soda_theme,
     fillable = FALSE,
-    uiOutput("boxes"),
+    vboxes,
     p(),
     layout_columns(
       col_widths = c(6, 6, 12),
@@ -222,56 +263,24 @@ server <- function(input, output) {
       labs(x = "Year", color = "Sector",
            y = "Year over year change")
   })
-
-  # Value boxes
-  output$boxes <- renderUI({
-    description <- p("Annual change from last year")
-    yoy_latest <- atr |>
-      # Get named vector of latest yoy
-      filter(year == max(year),
-             ccaa_name == input$ccaa_select) |>
-      select(sector_en, acc_yoy) |>
-      deframe()
-
-    layout_column_wrap(
-      width = "220px",
-      value_box(
-        title = "Total",
-        class = class_lu[["Total"]],
-        value = percent(yoy_latest[["Total"]]),
-        showcase = fa("chart-line", height = "50px"),
-        description
-      ),
-      value_box(
-        title = "Agriculture",
-        class = class_lu[["Agriculture"]],
-        value = percent(yoy_latest[["Agriculture"]]),
-        showcase = fa("wheat-awn", height = "50px"),
-        description
-      ),
-      value_box(
-        title = "Industry",
-        class = class_lu[["Industry"]],
-        value = percent(yoy_latest[["Industry"]]),
-        showcase = fa("screwdriver-wrench", height = "50px"),
-        description
-      ),
-      value_box(
-        title = "Construction",
-        class = class_lu[["Construction"]],
-        value = percent(yoy_latest[["Construction"]]),
-        showcase = fa("helmet-safety", height = "50px"),
-        description
-      ),
-      value_box(
-        title = "Services",
-        class = class_lu[["Services"]],
-        value = percent(yoy_latest[["Services"]]),
-        showcase = fa("store", height = "50px"),
-        description
-      )
-    )
+  
+  # Value box values
+  yoy_latest <- reactive({
+    atr |>
+    filter(year == max(year),
+           ccaa_name == input$ccaa_select) |>
+    select(sector_en, acc_yoy) |>
+    deframe() |> as.list()
   })
+  for(sector in sectors) {
+    # local env required, otherwise only last value is shown
+    # https://stackoverflow.com/questions/52646778/shiny-renderui-only-showing-last-output
+    local({
+      sec_loc <- sector
+      outputId <- paste0("vbox_", sec_loc)
+      output[[outputId]] <- renderText(percent(yoy_latest()[[sec_loc]]))
+    })
+  }
 }
 
 # Run the application

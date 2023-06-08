@@ -184,8 +184,6 @@ ui <- page_sidebar(
     foot
   )
 
-
-# Define server logic required to draw a histogram
 server <- function(input, output) {
   # Map plot
   output$map_plot <- renderPlot({
@@ -214,6 +212,8 @@ server <- function(input, output) {
       # Plot Canaries box
       geom_sf(data = can_box, color = "grey70") +
       # Plot label
+      # Generates warning "st_point_on_surface may not give correct results for
+      # longitude/latitude data", but could not find solution
       geom_label_repel(
         data = ccaa_atr_select,
         aes(label = paste0(input$ccaa_select, ":\n", round(accidents)),
@@ -222,7 +222,6 @@ server <- function(input, output) {
         fill = alpha(c("white"), 0.8),
         color = "black",
         size = 3,
-        # label.size = 0,
         nudge_x = 1.5,
         nudge_y = 1,
         min.segment.length = 0
@@ -283,5 +282,4 @@ server <- function(input, output) {
   }
 }
 
-# Run the application
 shinyApp(ui = ui, server = server)

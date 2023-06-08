@@ -6,7 +6,7 @@
 # Author: Luis Gentner
 # Created: 2023-05-20
 #
-# bslib 0.4.2.9000+ required
+# bslib 0.5.0+ required
 # Install with devtools::install_github("rstudio/bslib")
 
 library(conflicted)
@@ -85,42 +85,29 @@ sector_picker <- selectInput(
 )
 
 # Defining the sidebars
-page_sidebar <- sidebar(ccaa_picker)
+main_sidebar <- sidebar(ccaa_picker)
 map_sidebar <- sidebar(year_picker, sector_picker, position = "right")
 
-# Defining the layout of the two accident plots side-by-side
-acc_plots <- layout_column_wrap(
-  width = "400px",
-  height = "300px",
-  card(card_header("Number of work accidents"),
-       card_body(plotOutput("atr_plot"))
+# Defining the cards
+cards <- list(
+  card(
+    full_screen = TRUE,
+    card_header("Number of work accidents"),
+    plotOutput("atr_plot")
   ),
-  card(card_header("Annual change of work accidents"),
-       card_body(plotOutput("atr_yoy_plot"))
+  card(
+    full_screen = TRUE,
+    card_header("Annual change of work accidents"),
+    plotOutput("atr_yoy_plot")
+  ),
+  card(
+    full_screen = TRUE,
+    card_header("Map of work accident number"),
+    layout_sidebar(
+      sidebar = map_sidebar,
+      plotOutput("map_plot")
+    )
   )
-)
-
-# Defining the map plot
-map_plot <- card(
-  full_screen = TRUE,
-  card_header("Number of work accidents"),
-  layout_sidebar(
-    sidebar = map_sidebar,
-    plotOutput("map_plot")
-  )
-)
-
-# Defining the page
-page_view <- page_fillable(
-  h2("Work accidents in Spain after autonomous community"),
-  uiOutput("boxes"),
-  p(),
-  layout_column_wrap(
-    width = "600px",
-    acc_plots,
-    map_plot
-  )
-  
 )
 
 # Defining the footer
@@ -133,14 +120,19 @@ foot <- page_fillable(
   )
 )
 
-ui <- page_navbar(
+ui <- page_sidebar(
     title = "SODA Dashboard",
-    fillable = "Dashboard",
+    sidebar = main_sidebar,
     theme = soda_theme,
-    inverse = FALSE,
-    sidebar = page_sidebar,
+    fillable = FALSE,
     footer = foot,
-    nav_panel("Regional analysis", page_view)
+    uiOutput("boxes"),
+    p(),
+    layout_columns(
+      col_widths = c(6, 6, 12),
+      row_heights = c(2, 3),
+      !!!cards
+    )
   )
 
 
@@ -234,7 +226,7 @@ server <- function(input, output) {
       deframe()
 
     layout_column_wrap(
-      width = "250px",
+      width = "220px",
       value_box(
         title = "Total",
         class = class_lu[["Total"]],

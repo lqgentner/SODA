@@ -27,8 +27,16 @@ conflicts_prefer(
   dplyr::select()
 )
 
+# ----- DATA PREPARATION -----
+
 # Get ATR data
 load("atr_joined.RData")
+
+# Get Spanish ACs as simple features
+ccaa <- esp_get_ccaa() |> st_cast("MULTIPOLYGON")
+can_box <- esp_get_can_box()
+
+# ----- THEMING -----
 
 # Defining color scale
 soda_colors <- okabe_ito(5)[order(c(5, 2, 4, 3, 1))]
@@ -56,9 +64,7 @@ theme_set(theme_minimal())
 # Enable auto theming
 thematic_shiny(font = "auto", qualitative = soda_colors)
 
-# Get Spanish ACs as simple features
-ccaa <- esp_get_ccaa() |> st_cast("MULTIPOLYGON")
-can_box <- esp_get_can_box()
+# ----- UI ELEMENTS -----
 
 # Defining the CCAA picker
 ccaa_picker <- selectInput(
@@ -120,19 +126,21 @@ foot <- page_fillable(
   )
 )
 
+# ----- SHINY APP FUNCTIONS -----
+
 ui <- page_sidebar(
     title = "SODA Dashboard",
     sidebar = main_sidebar,
     theme = soda_theme,
     fillable = FALSE,
-    footer = foot,
     uiOutput("boxes"),
     p(),
     layout_columns(
       col_widths = c(6, 6, 12),
       row_heights = c(2, 3),
       !!!cards
-    )
+    ),
+    foot
   )
 
 

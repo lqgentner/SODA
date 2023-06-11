@@ -258,11 +258,11 @@ server <- function(input, output) {
       geom_point() +
       scale_x_date(date_minor_breaks = "years") +
       scale_y_continuous(labels = label_percent()) +
-      theme(legend.position="bottom") +
+      theme(legend.position = "bottom") +
       labs(x = "Year", color = "Sector",
            y = "Year over year change")
   })
-  
+
   # Value box values
   yoy_latest <- reactive({
     atr |>
@@ -271,13 +271,13 @@ server <- function(input, output) {
     select(sector_en, acc_yoy) |>
     deframe() |> as.list()
   })
-  for(sector in sectors) {
+  for (sector in sectors) {
     # local env required, otherwise only last value is shown
     # https://stackoverflow.com/questions/52646778/shiny-renderui-only-showing-last-output
     local({
       sec_loc <- sector
-      outputId <- paste0("vbox_", sec_loc)
-      output[[outputId]] <- renderText(percent(yoy_latest()[[sec_loc]]))
+      output_id <- paste0("vbox_", sec_loc)
+      output[[output_id]] <- renderText(percent(yoy_latest()[[sec_loc]]))
     })
   }
 }
